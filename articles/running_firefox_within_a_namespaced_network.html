@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Running Firefox Within A Namespaced Network</title>
+<meta name="description" content="Let's see how to create a new network namespace and then launch Firefox from within that namespace, serving a simple static html page on localhost.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>Running Firefox Within A Namespaced Network</h1>
+<p><font size="-1">Friday August 12, 2022.</font>
+<br><font size="-1"><a href="../articles.html">Back To Articles</a></font>
+<br><br>What we're going to do is create a new network namespace and then try to launch the Firefox browser from inside that namespace, serving a simple static html file on localhost to prove everything is working.
+<br>You may ask - Why? The short answer: Because this is something you'd probably never do otherwise. Why not? This will help get you a little more familiar with network namespaces and is a quirky little way of doing it.
+<br>
+<br><b>Note:</b> Throughout this article, I will be using <code>#</code> to denote the command prompt during any terminal commands I write here, to distinguish output from commands.
+<br><b>Note:</b> This article is written for Linux users. The instructions here, in particular, were tested on an Ubuntu 18.04.6 LTS release.
+</p>
+<h2>Creating The Namespace</h2>
+<p>First, let's create a new network namespace named <code>net1</code> so that we can isolate our network devices. Any devices in this new namespace are completely distinct and unrelated to any other network devices that exist on another namespace, including the default namespace your regular devices are currently located in:</p>
+<p><code>#sudo ip netns add net1</code>
+<br>We can verify the new namespace exists by running:
+<br><code>#ip netns
+<br>&nbspnet1
+</code></p>
+<p>The way we interact within our namespace is by using the following syntax:
+<br><code>#sudo ip netns exec &ltNAMESPACE&gt &ltCOMMAND&gt</code></p>
+<p>This line will execute whatever command <code>COMMAND</code> happens to be from within the network namespace (that's what the <code>netns</code> bit is specifying) named <code>net1</code>. Note that the command doesn't have to be a network-related command. You can run <code>ls</code> or <code>pwd</code> or anything else you want. They just won't really have any interesting differences, that's all.
+</p>
+<h2>Peeking Around Inside</h2>
+<p>Let's look around inside our new namespace and see what it looks like.
+<br>First, you'll notice that the routing table is empty:
+<br><code>#sudo ip netns exec net1 ip route</code></p>
+<p>We can also list our network devices:
+<br><code>#sudo ip netns exec net1 ip addr
+<br>&nbsp1: lo: &ltLOOPBACK&gt mtu 65536 qdisc noqueue state DOWN group default qlen 1000
+<br>&nbsp&nbsplink/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+<br>&nbsp&nbspinet 127.0.0.1/8 scope host lo
+<br>&nbsp&nbsp&nbspvalid_lft forever preferred_lft forever
+</code></p>
+<p>So we see we have a single network device in our namespace, a loopback device, <code>lo</code>. The loopback device is currently down, as we can see.
+<br>We can even test out that it is not up and running by pinging it:
+<br><code>#sudo ip netns exec net1 ping 127.0.0.1</code></p>
+<p>You'll notice the first ping just hangs. No response. Let's <code>CTRL+C</code> that and move on.</p>
+<h2>Serving Html Over Our Namespaced Loopback</h2>
+<p>Let's turn the loopback device up, so that we can use it:
+<br><code>#sudo ip netns exec net1 ip link set dev lo up</code></p>
+<p>Let's retry ping:
+<br><code>#sudo ip netns exec net1 ping 127.0.0.1</code></p>
+<p>Now you should see the pings are working as expected.
+<br>Of course, given that we have no routing table entries and that our loopback device only handles packets routed to the 127.0.0.1/8 subnet, we can't ping anything outside it. Try pinging <code>8.8.8.8</code> or anything else outside that subnet, and you'll see we have no luck.</p>
+<p>In another article, we'll look at how we can connect our namespace to the internet, but for now all we care about is the loopback device.
+<br>What we will do is create a simple html file and serve it via our new namespaced loopback device.
+<br>Go ahead and create a simple html file named <code>index.html</code>. If you're too lazy to write you're own, fine, you can borrow this one:
+<br><code>
+<br>&lt!DOCTYPE html&gt
+<br>&lthtml&gt
+<br>&lthead&gt
+<br>&lttitle&gtNamespaced Firefox&lt/title&gt
+<br>&lt/head&gt
+<br>&ltbody&gt
+<br>Nifty.
+<br>&lt/body&gt
+<br>&lt/html&gt
+<br>
+</code>
+<br>Now, let's serve this file. Use python or apache or go crazy and write your own socket listener that implements the http GET protocol. I don't care. Just serve the file.
+<br>For myself, I'll use python:
+<br><code>#python3 -m http.server 8000</code></p>
+<p>Let's open Firefox and navigate to <code>127.0.0.1:8000/index.html</code> and we can see that we are serving the file up as expected.
+<br>There's only one problem. We didn't execute our server from within our network namespace, and so we are actually serving it over our host default namespace's loopback device, not the new loopback device we created.
+<br>Let's fix that:
+<br><code>#sudo ip netns exec net1 python3 -m http.server 8000</code></p>
+<p>Now, let's refresh the page and voila. It doesn't work. That's because Firefox is running from within our host default namespace, and so it's using the wrong loopback device now. Let's fix that.</p>
+<h2>Running Firefox Within Our Namespace</h2>
+<p>Time for the interesting part. Let's try running Firefox from within our namespace on a separate terminal:
+<br><code>#sudo ip netns exec net1 firefox
+<br>&nbspRunning Firefox as root in a regular user's session is not supported.  ($HOME is /home/user which is owned by user.)
+</code></p>
+<p>As we see, it doesn't work. By running Firefox within our namespace, we are also running as root, which Firefox doesn't like, since running a browser with superuser permissions isn't the smartest idea.
+<br>However, we know what we're doing. We're not planning on checking out any shady websites. In fact, we can't. All we've got is a loopback device. All we want to do is check out our little html snippet from within a browser.
+<br>The first thing we'll need to do is run the following command to figure out where our <code>Xauthority</code> file is located:
+<br><code>#echo $XAUTHORITY
+<br>&nbsp/run/user/1000/gdm/Xauthority
+</code></p>
+<p>We need to copy this file over into root's home directory:
+<br><code>#sudo cp /run/user/1000/gdm/Xauthority /root</code></p>
+<p>Now, let's jump into a new shell that's within our network namespace:
+<br><code>#sudo ip netns exec net1 su</code></p>
+<p>Don't believe you're really in the namespace? Let's see:
+<br><code>#ip addr
+<br>&nbsp1: lo: &ltLOOPBACK,UP,LOWER_UP&gt mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+<br>&nbsp&nbsplink/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+<br>&nbsp&nbspinet 127.0.0.1/8 scope host lo
+<br>&nbsp&nbsp&nbspvalid_lft forever preferred_lft forever
+<br>&nbsp&nbspinet6 ::1/128 scope host 
+<br>&nbsp&nbsp&nbspvalid_lft forever preferred_lft forever
+</code></p>
+<p>Looks like the only network device in here is our loopback. Go ahead and check out the routing table. Empty.
+<br>Alright, before we can run Firefox, we need to set our HOME and XAUTHORITY to point to root's home and root's newly copied Xauthority file:
+<br><code>#export HOME=/root
+<br>#export XAUTHORITY=/root/Xauthority
+</code></p>
+<p>Finally, Firefox should give us a pass now. Let's try again:
+<br><code>#firefox</code></p>
+<p>Notice that if we attempt to navigate to any ip outside the 127.0.0.1/8 subnet, we don't get anything.
+<br>Finally, if we navigate to <code>127.0.0.1:8000/index.html</code> we should see our page getting served, proving it went through our namespaced loopback device, which we couldn't access from our other Firefox browser that was running the default way, in our default namespace.
+<br>That's all!
+</p>
+<h2>Clean Up</h2>
+<p>Just for completeness, let's delete the Xauthority file we dropped into the root home directory:
+<br><code>#rm /root/Xauthority</code></p>
+<p>Then <code>exit</code> our root shell that was launched from within our new namespace.
+<br>And finally, let's destroy the namespace:
+<br><code>#sudo ip netns delete net1</code>
+</p>
+</body>
+</html>
