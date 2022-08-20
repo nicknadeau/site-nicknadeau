@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Bridging Multiple Network Namespaces</title>
+<meta name="description" content="Let's see how to connect three separate network namespaces together using a bridge device and virtual ethernet pairs.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>Bridging Multiple Network Namespaces</h1>
+<p><font size="-1">Wednesday August 17, 2022.</font>
+<br><font size="-1"><a href="../articles.html">Back To Articles</a></font>
+<br><br>What we're going to do is create three different network namespaces and then use a bridge device and multiple virtual ethernet pairs to connect them all together, so that they can communicate with one another.
+<br>You may ask - Why? The short answer: To learn about bridge devices, as a follow up from my previous article: <a href="connecting_two_network_namespaces_over_veth.html">Connecting Two Network Namespaces Over Veth</a>.
+<br>
+<br><b>Note:</b> Throughout this article, I will be using <code>#</code> to denote the command prompt during any terminal commands I write here, to distinguish output from commands.
+<br><b>Note:</b> This article is written for Linux users. The instructions here, in particular, were tested on an Ubuntu 18.04.6 LTS release.
+</p>
+<h2>Creating The Namespaces</h2>
+<p>First, let's create four network namespaces named <code>net1</code>, <code>net2</code>, <code>net3</code> and <code>routing</code>. Any network devices in these new namespaces are completely distinct and unrelated from one another. We will use the first three namespaces to host the peers in our network and the last one, <code>routing</code>, to host our bridging support to connect the other three networks together. Let's create them all:
+<br><code>#sudo ip netns add net1
+<br>#sudo ip netns add net2
+<br>#sudo ip netns add net3
+<br>#sudo ip netns add routing
+</code></p>
+<p>We can verify that the four new namespaces exist by running:
+<br><code>#ip netns
+<br>&nbspnet3
+<br>&nbspnet2
+<br>&nbspnet1
+<br>&nbsprouting
+</code></p>
+<p>We can run commands, any shell commands, from within a specific network namespace by using the following syntax:
+<br><code>#sudo ip netns exec &ltNAMESPACE&gt &ltCOMMAND&gt</code></p>
+<p>If we peek inside our four namespaces and look at the network devices that exist within them, we can see that all the namespaces simply have a single device, the loopback device, and it is currently down:
+<br><code>#sudo ip netns exec net1 ip addr
+<br>&nbsp1: lo: &ltLOOPBACK&gt mtu 65536 qdisc noqueue state DOWN group default qlen 1000
+<br>&nbsp&nbsplink/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+<br>#sudo ip netns exec net2 ip addr
+<br>&nbsp1: lo: &ltLOOPBACK&gt mtu 65536 qdisc noqueue state DOWN group default qlen 1000
+<br>&nbsp&nbsplink/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+<br>#sudo ip netns exec net3 ip addr
+<br>&nbsp1: lo: &ltLOOPBACK&gt mtu 65536 qdisc noqueue state DOWN group default qlen 1000
+<br>&nbsp&nbsplink/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+<br>#sudo ip netns exec routing ip addr
+<br>&nbsp1: lo: &ltLOOPBACK&gt mtu 65536 qdisc noqueue state DOWN group default qlen 1000
+<br>&nbsp&nbsplink/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+</code></p>
+<p>Clearly we cannot communicate between these namespaces yet, since none of them have a network device that is up and running nor one that can transmit packets outside of its namespace.
+</p>
+<h2>Giving Each Namespace A Virtual Ethernet Pair</h2>
+<p>The way we are going to connect these three disparate networks is by using two special network devices: a bridge, and virtual ethernet pairs. The virtual ethernet pairs act like virtual ethernet cables. They have two ends, and act as a simple point-to-point device so that any packets transmitted into one end of the device are immediately received on the other end. The bridge acts as a layer two network switch, routing incoming packets to the various interfaces connected to it. Our strategy will be to place one end of each of our virtual ethernet pairs in our three "peer" namespaces and then place the other ends in our <code>routing</code> namespace, connecting them to the bridge so that every interface has a route to one another.</p>
+<p>Let's create our three virtual ethernet pairs. Each end of a pair needs a specific name. We will name all our ends using the format <code>netX_vethY</code>, for our <code>X</code> "peer" namespaces and <code>Y</code> ethernet ends:
+<br><code>#sudo ip link add net1_veth1 type veth peer name net1_veth2
+<br>#sudo ip link add net2_veth1 type veth peer name net2_veth2
+<br>#sudo ip link add net3_veth1 type veth peer name net3_veth2
+</code></p>
+<p>You can run <code>ip addr</code> to see all of these virtual ethernet devices now created on your host default namespace.
+<br>Next, we will move the veth1 sides of each of these pairs into our three "peer" namespaces:
+<br><code>#sudo ip link set net1_veth1 netns net1
+<br>#sudo ip link set net2_veth1 netns net2
+<br>#sudo ip link set net3_veth1 netns net3
+</code></p>
+<p>Finally, we will move the remaining veth2 sides of our three pairs into the <code>routing</code> namespace:
+<br><code>#sudo ip link set net1_veth2 netns routing
+<br>#sudo ip link set net2_veth2 netns routing
+<br>#sudo ip link set net3_veth2 netns routing
+</code></p>
+<p>Go ahead and convince yourself that everything is where it should be by using the <code>ip addr</code> command on the default namespace and then within each of our four namespaces.
+</p>
+<h2>Bridging The Virtual Ethernet Pairs</h2>
+<p>The first thing we have to do is create our bridge device. Unlike a virtual ethernet pair, we cannot move a bridge from one namespace to another, so we need to create it in the appropriate namespace:
+<br><code>#sudo ip netns exec routing ip link add vswitch type bridge</code></p>
+<p>We have now created all our devices. The next thing we need to do is attach the veth2 sides of our three virtual ethernet pairs to our bridge, so that everything is connected:
+<br><code>#sudo ip netns exec routing ip link set net1_veth2 master vswitch
+<br>#sudo ip netns exec routing ip link set net2_veth2 master vswitch
+<br>#sudo ip netns exec routing ip link set net3_veth2 master vswitch
+</code></p>
+<p>If you run <code>ip addr</code> within the <code>routing</code> namespace you will now see the bridge device, our three virtual ethernet pair ends, and notice that each of these ends lists <code>master vswitch</code> in its device description, indicating that they are attached to the bridge.</p>
+<p>Our network topology is complete. But we still can't send any packets because our devices are all still down and none of them have ip addresses we can use to address them. We're going to test out our connectivity using the <code>ping</code> protocol, and so we need ip addresses since <code>ping</code> operates at layer three in the OSI model.</p>
+<p>Let's begin by assigning ip addresses to our devices. The only devices which actually need an ip address are the ends of the virtual ethernet pairs that are inside our three "peer" namespaces. I go into depth on why this is the case in my other article <b>COMING SOON</b>. You can read that if you're curious. For now, let's carry on:
+<br><code>#sudo ip netns exec net1 ip addr add 10.0.1.2/24 dev net1_veth1
+<br>#sudo ip netns exec net2 ip addr add 10.0.1.3/24 dev net2_veth1
+<br>#sudo ip netns exec net3 ip addr add 10.0.1.4/24 dev net3_veth1
+</code></p>
+<p>Before we can try to ping, all of our devices need to be turned up so that they can transmit and receive. Note that in the case of a virtual ethernet pair, both ends of the device have to be turned up for it to work. If one end is down, then either side acts as if it were down. Let's turn our devices up now:
+<br><code>#sudo ip netns exec net1 ip link set dev net1_veth1 up
+<br>#sudo ip netns exec net2 ip link set dev net2_veth1 up
+<br>#sudo ip netns exec net3 ip link set dev net3_veth1 up
+<br>#sudo ip netns exec routing ip link set dev net1_veth2 up
+<br>#sudo ip netns exec routing ip link set dev net2_veth2 up
+<br>#sudo ip netns exec routing ip link set dev net3_veth2 up
+<br>#sudo ip netns exec routing ip link set dev vswitch up
+</code></p>
+<p>Finally, if we try to ping from one namespace to the other we see we get a response!
+<br><code>#sudo ip netns exec net1 ping -c1 10.0.1.3
+<br>&nbspPING 10.0.1.3 (10.0.1.3) 56(84) bytes of data.
+<br>&nbsp64 bytes from 10.0.1.3: icmp_seq=1 ttl=64 time=0.141 ms
+<br>
+<br>&nbsp--- 10.0.1.3 ping statistics ---
+<br>&nbsp1 packets transmitted, 1 received, 0% packet loss, time 0ms
+<br>&nbsprtt min/avg/max/mdev = 0.141/0.141/0.141/0.000 ms
+</code>
+</p>
+<h2>Clean Up</h2>
+<p>Since all our devices are inside our namespaces, we can delete everything by just getting rid of the namespaces:
+<br><code>#sudo ip netns delete net1
+<br>#sudo ip netns delete net2
+<br>#sudo ip netns delete net3
+<br>#sudo ip netns delete routing
+</code>
+</p>
+</body>
+</html>
