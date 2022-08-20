@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Connecting Two Network Namespaces Over Veth</title>
+<meta name="description" content="Let's see how to connect two separate network namespaces together using a virtual ethernet pair.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>Connecting Two Network Namespaces Over Veth</h1>
+<p><font size="-1">Saturday August 13, 2022.</font>
+<br><font size="-1"><a href="../articles.html">Back To Articles</a></font>
+<br><br>What we're going to do is create two different network namespaces and then use a virtual ethernet pair to connect them, so that they can communicate with one another.
+<br>You may ask - Why? The short answer: To give you some exposure to this special networking device, the virtual ethernet pair (or <code>veth</code>).
+<br>
+<br><b>Note:</b> Throughout this article, I will be using <code>#</code> to denote the command prompt during any terminal commands I write here, to distinguish output from commands.
+<br><b>Note:</b> This article is written for Linux users. The instructions here, in particular, were tested on an Ubuntu 18.04.6 LTS release.
+</p>
+<h2>Creating The Namespaces</h2>
+<p>First, let's create two network namespaces named <code>net1</code> and <code>net2</code>. Any network devices in these new namespaces are completely distinct and unrelated from one another. This is akin to starting from scratch and building up a network. Let's create them:
+<br><code>#sudo ip netns add net1
+<br>#sudo ip netns add net2
+</code></p>
+<p>We can verify that the two new namespaces exist by running:
+<br><code>#ip netns
+<br>&nbspnet2
+<br>&nbspnet1
+</code></p>
+<p>We can run commands, any shell commands, from within a specific network namespace by using the following syntax:
+<br><code>#sudo ip netns exec &ltNAMESPACE&gt &ltCOMMAND&gt</code>
+<br>If we peek inside our two namespaces and look at the network devices that exist within them, we can see that both namespaces simply have a single device, the loopback device, and it is currently down:
+<br><code>#sudo ip netns exec net1 ip addr
+<br>&nbsp1: lo: &ltLOOPBACK&gt mtu 65536 qdisc noqueue state DOWN group default qlen 1000
+<br>&nbsp&nbsplink/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+<br>#sudo ip netns exec net2 ip addr
+<br>&nbsp1: lo: &ltLOOPBACK&gt mtu 65536 qdisc noqueue state DOWN group default qlen 1000
+<br>&nbsp&nbsplink/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+</code></p>
+<p>If we peek inside at our routing tables in these two namespaces, we see that they are completely empty:
+<br><code>#sudo ip netns exec net1 ip route
+<br>#sudo ip netns exec net2 ip route
+</code>
+<br>Clearly we cannot communicate yet between these two namespaces, since neither namespace has a network device that is up and running nor one that can transmit packets outside of its namespace.
+</p>
+<h2>Understanding Virtual Ethernet Pairs</h2>
+<p>The way we are going to connect these two disparate networks is by using a special networking device called a Virtual Ethernet Pair. Like the name suggests, this device should be thought of as a pair of devices rather than a single device. It is meant to mimic an ethernet cable, but completely virtually. Just like an ethernet cable has two ends to it, which connect a computer and a router, say, so too does a virtual ethernet pair have two ends - and these two ends are what we are referring to when we say "pair".</p>
+<p>These two ends are thus connected together by our virtual cable. Any packets transmitted into one end are immediately received on the other end. Both ends can be used for transmitting and receiving, so a virtual ethernet pair does exactly what we need it to - it solves the problem of two distinct hosts needing to communicate with one another, which we are emulating with namespaces.</p>
+<p>Let's go ahead and create a pair. We will name the two ends of the pair <code>veth1</code> and <code>veth2</code>:
+<br><code>#sudo ip link add veth1 type veth peer name veth2</code></p>
+<p>Now, if we look at our network devices, we should see both ends of our virtual ethernet pair listed as separate devices:
+<br><code>#ip addr
+<br>&nbsp5: veth2@veth1: &ltBROADCAST,MULTICAST,M-DOWN&gt mtu 1500 qdisc noop state DOWN group default qlen 1000
+<br>&nbsp&nbsplink/ether a6:8d:34:c8:95:5b brd ff:ff:ff:ff:ff:ff
+<br>&nbsp6: veth1@veth2: &ltBROADCAST,MULTICAST,M-DOWN&gt mtu 1500 qdisc noop state DOWN group default qlen 1000
+<br>&nbsp&nbsplink/ether f6:4e:a3:1a:eb:27 brd ff:ff:ff:ff:ff:ff
+</code></p>
+<p>On my machine, these devices are number <code>5</code> and <code>6</code>. We can see both devices are currently down. And we can also see the names of the devices give us information about which end this device is and who it is connected to: <code>veth2@veth1</code> telling us that this network device is <code>veth2</code> and that it is paired with the network device <code>veth1</code>.</p>
+<p>However, note that we created these devices on our default namespace. They don't yet exist within either of our two new namespaces, and thus have no means of interacting with them.
+<br>We will solve that problem. But first, let's bring our two pairs up so we can test them out:
+<br><code>#sudo ip link set dev veth1 up
+<br>#sudo ip link set dev veth2 up
+</code></p>
+<p>Now, checking back in on our devices, we see that both our pairs are up:
+<br><code>#ip addr
+<br>&nbsp5: veth2@veth1: &ltBROADCAST,MULTICAST,UP,LOWER_UP&gt mtu 1500 qdisc noqueue state UP group default qlen 1000
+<br>&nbsp&nbsplink/ether a6:8d:34:c8:95:5b brd ff:ff:ff:ff:ff:ff
+<br>&nbsp&nbspinet6 fe80::a48d:34ff:fec8:955b/64 scope link tentative 
+<br>&nbsp&nbsp&nbspvalid_lft forever preferred_lft forever
+<br>&nbsp6: veth1@veth2: &ltBROADCAST,MULTICAST,UP,LOWER_UP&gt mtu 1500 qdisc noqueue state UP group default qlen 1000
+<br>&nbsp&nbsplink/ether f6:4e:a3:1a:eb:27 brd ff:ff:ff:ff:ff:ff
+<br>&nbsp&nbspinet6 fe80::f44e:a3ff:fe1a:eb27/64 scope link tentative 
+<br>&nbsp&nbsp&nbspvalid_lft forever preferred_lft forever
+</code>
+</p>
+<h2>Moving The Virtual Ethernet Inside Our Namespaces</h2>
+<p>Let's run a command to move the <code>veth1</code> end of our pair into the <code>net1</code> namespace, and to move <code>veth2</code> into <code>net2</code>:
+<br><code>#sudo ip link set veth1 netns net1
+<br>#sudo ip link set veth2 netns net2
+</code></p>
+<p>Now, if we check out our network devices from our host's default namespace we'll see that both ends of our virtual ethernet are now missing, as we expect:
+<br><code>#ip addr</code>
+<br>Let's look at the devices listed in all our namespaces:
+<br><code>#sudo ip -all netns exec ip link show
+<br>&nbspnetns: net2
+<br>&nbsp1: lo: &ltLOOPBACK&gt mtu 65536 qdisc noop state DOWN mode DEFAULT group default qlen 1000
+<br>&nbsp&nbsplink/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+<br>&nbsp5: veth2@if6: &ltBROADCAST,MULTICAST&gt mtu 1500 qdisc noop state DOWN mode DEFAULT group default qlen 1000
+<br>&nbsp&nbsplink/ether a6:8d:34:c8:95:5b brd ff:ff:ff:ff:ff:ff link-netnsid 0
+<br>
+<br>&nbspnetns: net1
+<br>&nbsp1: lo: &ltLOOPBACK&gt mtu 65536 qdisc noop state DOWN mode DEFAULT group default qlen 1000
+<br>&nbsp&nbsplink/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+<br>&nbsp6: veth1@if5: &ltBROADCAST,MULTICAST&gt mtu 1500 qdisc noop state DOWN mode DEFAULT group default qlen 1000
+<br>&nbsp&nbsplink/ether f6:4e:a3:1a:eb:27 brd ff:ff:ff:ff:ff:ff link-netnsid 1
+</code></p>
+<p>We can see that each of our namespaces has its expected end of the device.
+<br>Notice too that the names of the devices have changed a bit. Instead of <code>veth1@veth2</code> we now have <code>veth1@if5</code>. This is simply because the <code>veth2</code> name is no longer within the same namespace and so the <code>veth1</code> device doesn't reference the device by that alias. Instead, it uses the canonical name, which is "interface number 5". As we can see, <code>veth2</code> is in fact the fifth network interface, as we see with the: <code>5:</code> before its name.
+</p>
+<h2>Sending Data Through The Virtual Ethernet Pair</h2>
+<p>The next thing we need to do is assign ip addresses to our two ends of the virtual ethernet pair, so that we can begin using them.
+<br>This step is a bit special, because a virtual ethernet pair is a point-to-point network device, meaning it is a direct connection between two hosts without any other networking going on in between. That is, our packets will not be going in one end and then routed to the other end, but will be sent across directly. For this reason, we need to assign our ip addresses but specify our peer's address as well, to indicate this is a point-to-point connection.</p>
+<p>We will assign ip <code>10.0.1.1</code> to <code>veth1</code> and <code>10.0.1.2</code> to <code>veth2</code>:
+<br><code>#sudo ip netns exec net1 ip addr add 10.0.1.1 peer 10.0.1.2 dev veth1
+<br>#sudo ip netns exec net2 ip addr add 10.0.1.2 peer 10.0.1.1 dev veth2
+</code></p>
+<p>Notice when you run <code>ip addr</code> within your namespace, that the virtual ethernet device has its ip address and also lists the ip address of its peer.
+<br>Likewise, we can see the expected routing table entry using <code>ip route</code> in our namespace.
+<br>Finally, let's bring our two devices up so we can use them:
+<br><code>#sudo ip netns exec net1 ip link set dev veth1 up
+<br>#sudo ip netns exec net2 ip link set dev veth2 up
+</code></p>
+<p>We can verify the virtual ethernet device is working as expected by launching a second terminal, and in that terminal listening on the device on some random port using netcat. We will listen on our <code>veth1</code> side:
+<br><code>terminal1#sudo ip netns exec net1 nc -l 10.0.1.1 8000</code></p>
+<p>In our other terminal, let's connect to 10.0.1.1 on port 8000:
+<br><code>terminal2#sudo ip netns exec net1 nc 10.0.1.1 8000</code></p>
+<p>Type in a message on this terminal and press enter. You should see that the listening netcat server has received the data!
+</p>
+<h2>Clean Up</h2>
+<p>Since our newly created network devices are within our namespaces, all we have to do is delete the namespaces:
+<br><code>#sudo ip netns delete net1
+<br>#sudo ip netns delete net2
+</code>
+</p>
+<h2>Part Two</h2>
+<p>This article showed how to connect two separate namespaces directly, but what about three or more? A simple point-to-point virtual ethernet device will no longer work for that.
+<br>The next article goes into how we can solve that problem: <b>COMING SOON</b>.
+</p>
+</body>
+</html>
