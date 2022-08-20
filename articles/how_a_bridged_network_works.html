@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>How A Bridged Network Works</title>
+<meta name="description" content="Let's look at how packets flow through a bridge device to other nodes in a network to figure out what's going on.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>How A Bridged Network Works</h1>
+<p><font size="-1">Saturday August 20, 2022.</font>
+<br><font size="-1"><a href="../articles.html">Back To Articles</a></font>
+<p>What we're going to do is create a bunch of network namespaces to simulate multiple separate networks, and we will connect them all with a single bridge device and then analyze how the packets flow through our network so that we can understand how the bridge works and how our data is getting from one namespace to the other.</p>
+<p>You may ask - Why? The short answer: So that bridges no longer feel like "magic" and so we can actually understand what is going on. This also is a useful illumination of how your router connects the various devices on your own home network. This is a deeper dive inspired by my previous article: <a href="bridging_multiple_network_namespaces.html">Bridging Multiple Network Namespaces</a>.</p>
+<p><b>Note:</b> Throughout this article, I will be using <code>#</code> to denote the command prompt during any terminal commands I write here, to distinguish output from commands.
+<br><b>Note:</b> This article is written for Linux users. The instructions here, in particular, were tested on an Ubuntu 18.04.6 LTS release.</p>
+<h2>Network Setup</h2>
+<p>My previous articles dive into setting up namespaces and connecting them using virtual ethernet pairs and a bridge device. I'm going to assume this sort of setup is familiar to you and that you know what these devices do. The purpose of this article is to examine the bridge with a little more scrutiny so we can understand how one host in one namespace is able to send and receive packets to/from another host which resides in a separate namespace.</p>
+<p>Our network topology will be simple. We will have four namespaces. Three namespaces will contain our "hosts", called <code>host1</code>, <code>host2</code>, and <code>host3</code>. That is, these namespaces will each have one end of their own virtual ethernet pair inside them, which will have an ip address, making them addressable to the larger network. The fourth namespace will be named <code>routing</code> and it will contain our bridge device and the other three ends of the virtual ethernet pairs connected to our hosts - these ends will be attached to the bridge, wiring up the entire network.</p>
+<p>Our bridge device will be named <code>vswitch</code>, since it acts like a virtual switch. The 3 ends of the virtual ethernet pairs that are connected to the bridge will be named <code>host1_out</code>, <code>host2_out</code>, <code>host3_out</code>. The other ends of the virtual ethernet pairs, which reside in each of the three host namespaces, will be named similarly except <code>out</code> will be replaced with <code>in</code> to signify it as the end which is inside the namespace, as opposed to the external or outer-facing end.</p>
+<p>Our packet analysis strategy will also be simple. We will put all of our devices into promiscuous mode, so that we can see every packet which arrives at them. Then we will turn all the devices up and run <code>tcpdump</code> on each instance, as background tasks. After that, we will send a <code>ping</code> from one namespace to another and then bring our devices down.</p>
+<p>All of this work is mostly going to be taken care of us by some shell scripts I've written and which are available on my Github repository: <a href="https://github.com/nicknadeau/netns-packet-analysis">netns-packet-analysis</a>.
+<br>Our interest is the results of the <code>tcpdump</code>, not the details of how we are orchestrating all this. For that reason, I won't go into detail as to what the scripts are doing. At a high level, they accomplish exactly what I've described above. Feel free to inspect them further for your own clarification or interest.</p>
+<h2>Producing Our Packet Dump</h2>
+<p>We are going to produce our packet dump file now using the strategy outlined above and my Github scripts mentioned above. What we are interested in is monitoring how an ICMP (that's <code>ping</code>) packet gets routed from one namespace, through the bridge, to another. We'll make our sending host <code>host1</code> and we will send the packet to <code>host2</code>.</p>
+<p>First, we setup the network topology we described above:
+<br><code>#./create_namespaces.sh --num 3 --prefix host --host-base-ip 10.0.1.2 --host-subnet-mask 24 --route-ns-name routing</code>
+<br>This command set up the network we described. The three "host" namespaces have ip address <code>10.0.1.2</code>, <code>10.0.1.3</code>, <code>10.0.1.4</code> set to the virtual ethernet pair ends in them and that is how we will address them.</p>
+<p>Next, let's turn the devices all up and then run our <code>tcpdump</code> instances:
+<br><code>#./set_devices_status.sh --status up --num 3 --prefix host --route-ns-name routing
+<br>#mkdir ./dump
+<br>#./run_tcpdumps.sh --num 3 --prefix host --route-ns-name routing --dump-dir ./dump --tcpdump-args -v -n
+</code></p>
+<p>Now we will send a single ping from <code>host1</code> to <code>host2</code> and then once that completes we turn the devices down.
+<br><code>#sudo ip netns exec host1 ping -c1 10.0.1.3
+<br>#./set_devices_status.sh --status down --num 3 --prefix host --route-ns-name routing
+</code></p>
+<p>Now that we've captured all the traffic on all of our devices, we compile all of the separate <code>tcpdump</code> reports into a single master report, which is sorted according to the timestamps of each entry in the dump. This dump is going to contain a bunch of <code>IP6</code> packets for the IPv6 protocol. We aren't interested in those at all, because they have no bearing on us. We are sending a ping over IPv4. I'm going to go ahead and remove all those IPv6 packets from the file.
+<br><code>#./compile_master_tcpdump_report.sh --num 3 --prefix host --route-ns-name routing --dump-dir ./dump</code></p>
+<h2>Analyzing The Packets I: ARP</h2>
+<p>We notice that the first bunch of messages being sent around are not ICMP packets but rather ARP ethernet frames. Here's what we see:</p>
+<p><code>11:35:15.765696 host1_in ARP, Ethernet (len 6), IPv4 (len 4), Request who-has 10.0.1.3 tell 10.0.1.2, length 28
+<br>11:35:15.765701 host1_out ARP, Ethernet (len 6), IPv4 (len 4), Request who-has 10.0.1.3 tell 10.0.1.2, length 28
+<br>11:35:15.765701 vswitch ARP, Ethernet (len 6), IPv4 (len 4), Request who-has 10.0.1.3 tell 10.0.1.2, length 28
+<br>11:35:15.765713 host3_out ARP, Ethernet (len 6), IPv4 (len 4), Request who-has 10.0.1.3 tell 10.0.1.2, length 28
+<br>11:35:15.765715 host3_in ARP, Ethernet (len 6), IPv4 (len 4), Request who-has 10.0.1.3 tell 10.0.1.2, length 28
+<br>11:35:15.765717 host2_out ARP, Ethernet (len 6), IPv4 (len 4), Request who-has 10.0.1.3 tell 10.0.1.2, length 28
+<br>11:35:15.765719 host2_in ARP, Ethernet (len 6), IPv4 (len 4), Request who-has 10.0.1.3 tell 10.0.1.2, length 28
+<br>11:35:15.765742 host2_in ARP, Ethernet (len 6), IPv4 (len 4), Reply 10.0.1.3 is-at 6a:d1:12:d2:28:4d, length 28
+<br>11:35:15.765743 host2_out ARP, Ethernet (len 6), IPv4 (len 4), Reply 10.0.1.3 is-at 6a:d1:12:d2:28:4d, length 28
+<br>11:35:15.765743 vswitch ARP, Ethernet (len 6), IPv4 (len 4), Reply 10.0.1.3 is-at 6a:d1:12:d2:28:4d, length 28
+<br>11:35:15.765746 host1_out ARP, Ethernet (len 6), IPv4 (len 4), Reply 10.0.1.3 is-at 6a:d1:12:d2:28:4d, length 28
+<br>11:35:15.765747 host1_in ARP, Ethernet (len 6), IPv4 (len 4), Reply 10.0.1.3 is-at 6a:d1:12:d2:28:4d, length 28
+</code></p>
+<p>ARP stands for Address Resolution Protocol. The purpose of this protocol is to help hosts build a mapping of ip addresses to MAC addresses. This protocol is fundamental to IP (the Internet Protocol). Recall that the IP protocol is at Layer 3 in the OSI model. It sits on top of the Layer 2 protocol beneath it, which is the protocol that is used to send data across physical media. The Layer 2 protocol beneath IP is Ethernet in this case. What this means is that in order to send an IP datagram over a network, we must first create an Ethernet frame and make our IP datagram the payload of the Ethernet frame. But an Ethernet frame knows nothing about ip addresses. They do not exist in its world. Ip addresses are used for addressing hosts outside a local network, but the ethernet protocol always operates only within a local network, since its job is to simply move data from one machine to another machine it is connected to. Instead of ip addresses, ethernet frames use MAC addresses to identify their sender and receiver.</p>
+<p>MAC stands for Media Access Control. MAC addresses are typically assigned by the manufacturer of your device. If you run <code>ip addr</code> you can see the MAC address of each of your network devices. It will be listed like this: <code>link/ether 58:96:1d:ab:d0:60</code>. So, in order to build an ICMP packet, the <code>ping</code> program first needs to build an IP datagram so it can put the ICMP packet into the datagram's payload. But, in order to build the datagram, it must construct an ethernet frame so that it can put the datagram in the frame's payload. This is why, long before we see any ICMP messages, we first see ARP messages appear, because <code>host1</code> does not know the MAC address of the destination ip address it wants to send a message to (<code>10.0.1.3</code>) and therefore it must send out ARP messages to the network to discover what the MAC address is.</p>
+<p>And that is exactly what we see going on here. The ARP request initiates on the virtual ethernet pair's end that is inside the <code>host1</code> namespace, named <code>host1_in</code>. The request is asking for the MAC address of <code>10.0.1.3</code> (that's what the <code>who-has 10.0.1.3</code> bit is saying), and it includes its own ip address as the ip of the device that is enquiring (that's what the <code>tell 10.0.1.2</code> bit is saying). We then see that this ethernet frame ends up at <code>host1_out</code>, since that is the other side of the virtual ethernet pair, and as we know any packets transmitted into one side of a pair immediately appear on the other side. Then, since the "out" end is connected to our bridge, <code>vswitch</code>, we see that the frame ends up being received by the bridge. This is still the same <code>Request</code> message, as we can see.</p>
+<p>The bridge does not have an ip address. It is a layer 2 device. So its job is to forward this request to other devices on the network. And that's what it does. It then broadcasts this request to the two other devices attached to the bridge. We can see that both <code>host2_out</code> and <code>host3_out</code> receive the request next, and that their corresponding "in" ends then receive the request. What happens next is <code>host2_in</code> notices it has ip address <code>10.0.1.3</code>, and so it is the target of this ARP message, and it has been instructed to send its MAC address to <code>10.0.1.2</code>. We see that soon after receiving this request, <code>host2_in</code> then generates a Replay message which states that its MAC address is <code>6a:d1:12:d2:28:4d</code> (that's what the <code>10.0.1.3 is-at 6a:d1:12:d2:28:4d</code> bit is saying). This message hits the other side of its virtual ethernet pair, is received by the bridge, and then forwarded to <code>host1</code>. Now, <code>host1</code> knows the MAC address of the ip address it wants to talk to. It can construct an ethernet frame to hold its IP datagram now.</p>
+<p>There are 2 important things to note here that we stepped over. The first is that when <code>host3_in</code> received the ARP request, it did nothing with it. That's how the protocol works. The ARP request is broadcast to everyone on the network because it is a request to a specific ip address, and a bridge does not know anything about ip addresses. As such, it has to send the request out to everyone since it doesn't know who to target. As such, any device which receives an ARP request for an ip address it does not own will simply be silent and not generate any reply. It is up to the ip address owner to reply and no one else. This does mean that an attacker on the network can cause some chaos. For instance, they could reply and pretend to own the ip address in question, and then two ARP replies would come in, each one mapping the ip address to a different MAC, confusing the requester. Note that since this is a layer 2 protocol, this sort of attack can only be carried out within a local network, which makes it very limiting.</p>
+<p>The second thing to note in all of this is that when the bridge received the ARP reply, it did not broadcast the reply out to everyone else on the network. In fact, it only sent the reply to <code>host1</code>, suggesting it knew exactly who the recipient was. But how can that be the case? Didn't we just say ARP is a layer 3 protocol, involving ip addresses, and that's why the bridge had to broadcast the ARP request to everyone? Actually, ARP is not a <i>strictly</i> layer 3 protocol. After all, it is here to translate ip addresses (layer 3) to MAC addresses (layer 2), which really situates ARP at both layer 2 and 3. Notice that the ARP request specifically said to <code>tell 10.0.1.2</code>, but the ARP reply does not contain <code>10.0.1.2</code> anywhere in it. It appears as if the reply is completely ignoring this request to tell a specific ip address the answer. But it's not. If that was the case, and the ARP reply was destined for an ip address, then the bridge would have to broadcast the reply out to everyone. But ARP is clever about this, and makes use of its layer 2 heritage when it comes to the replay, so that the replay can be sent directly to the requester rather than broadcast out to everyone else on the network.</p>
+<p>To see what's going on, we need more information than what the dump above showed us. In particular, we're going to need to see some of the data in the ethernet frame itself. For this, we can re-run our dumps and pass in the <code>-e</code> flag to <code>tcpdump</code>, which instructs it to print out the source and destination MAC addresses in the ethernet frames. Doing this, we end up with this more verbose ARP exchange:</p>
+<p><code>12:21:43.007348 host1_in 66:2a:80:6e:cc:60 > ff:ff:ff:ff:ff:ff, ethertype ARP (0x0806), length 42: Ethernet (len 6), IPv4 (len 4), Request who-has 10.0.1.3 tell 10.0.1.2, length 28
+<br>12:21:43.007353 host1_out 66:2a:80:6e:cc:60 > ff:ff:ff:ff:ff:ff, ethertype ARP (0x0806), length 42: Ethernet (len 6), IPv4 (len 4), Request who-has 10.0.1.3 tell 10.0.1.2, length 28
+<br>12:21:43.007353 vswitch 66:2a:80:6e:cc:60 > ff:ff:ff:ff:ff:ff, ethertype ARP (0x0806), length 42: Ethernet (len 6), IPv4 (len 4), Request who-has 10.0.1.3 tell 10.0.1.2, length 28
+<br>12:21:43.007378 host3_out 66:2a:80:6e:cc:60 > ff:ff:ff:ff:ff:ff, ethertype ARP (0x0806), length 42: Ethernet (len 6), IPv4 (len 4), Request who-has 10.0.1.3 tell 10.0.1.2, length 28
+<br>12:21:43.007380 host3_in 66:2a:80:6e:cc:60 > ff:ff:ff:ff:ff:ff, ethertype ARP (0x0806), length 42: Ethernet (len 6), IPv4 (len 4), Request who-has 10.0.1.3 tell 10.0.1.2, length 28
+<br>12:21:43.007382 host2_out 66:2a:80:6e:cc:60 > ff:ff:ff:ff:ff:ff, ethertype ARP (0x0806), length 42: Ethernet (len 6), IPv4 (len 4), Request who-has 10.0.1.3 tell 10.0.1.2, length 28
+<br>12:21:43.007384 host2_in 66:2a:80:6e:cc:60 > ff:ff:ff:ff:ff:ff, ethertype ARP (0x0806), length 42: Ethernet (len 6), IPv4 (len 4), Request who-has 10.0.1.3 tell 10.0.1.2, length 28
+<br>12:21:43.007442 host2_in e2:28:37:70:1c:47 > 66:2a:80:6e:cc:60, ethertype ARP (0x0806), length 42: Ethernet (len 6), IPv4 (len 4), Reply 10.0.1.3 is-at e2:28:37:70:1c:47, length 28
+<br>12:21:43.007443 host2_out e2:28:37:70:1c:47 > 66:2a:80:6e:cc:60, ethertype ARP (0x0806), length 42: Ethernet (len 6), IPv4 (len 4), Reply 10.0.1.3 is-at e2:28:37:70:1c:47, length 28
+<br>12:21:43.007443 vswitch e2:28:37:70:1c:47 > 66:2a:80:6e:cc:60, ethertype ARP (0x0806), length 42: Ethernet (len 6), IPv4 (len 4), Reply 10.0.1.3 is-at e2:28:37:70:1c:47, length 28
+<br>12:21:43.007446 host1_out e2:28:37:70:1c:47 > 66:2a:80:6e:cc:60, ethertype ARP (0x0806), length 42: Ethernet (len 6), IPv4 (len 4), Reply 10.0.1.3 is-at e2:28:37:70:1c:47, length 28
+<br>12:21:43.007447 host1_in e2:28:37:70:1c:47 > 66:2a:80:6e:cc:60, ethertype ARP (0x0806), length 42: Ethernet (len 6), IPv4 (len 4), Reply 10.0.1.3 is-at e2:28:37:70:1c:47, length 28
+</code></p>
+<p>We now see that the MAC address of <code>host1_in</code> is not only present in the ethernet frame it transmits out, but this same MAC address is kept in tack as the request traverses the network. The bridge does not replace it with its own MAC. This allows <code>host2_in</code>, the replying device, to know that <code>66:2a:80:6e:cc:60</code> is the MAC address of the requester (who apparently owns <code>10.0.1.2</code>), and so when the replay is sent out, its destination MAC address is specifically destined for <code>66:2a:80:6e:cc:60</code> since it knows who to contact. That's how the bridge knows who to forward the frame to, and why it does not need to broadcast the frame out to everyone else on the network. You'll notice that the original MAC destination of the ARP request was <code>ff:ff:ff:ff:ff:ff</code>. This is a special MAC address reserved to signify that this is a broadcast and not intended for a specific peer. The reason it's a broadcast is obvious - the whole point of the ARP request is to learn the MAC address of the desired destination, and since we don't know it yet but must put something, the broadcast address is used (and as we saw, the request is broadcast because that's really the only way of finding someone on the network who owns the given ip).</p>
+<h2>Analyzing The Packets II: MAC Forwarding</h2>
+<p>So where are these MAC addresses stored? Well, each host has its own ARP Cache/Table, which contains the ip-to-MAC mappings. After a successful ARP exchange, <code>host1</code> now knows the destination MAC for the ip of interest. This is used as an optimization, so that on subsequent deliveries, the host does not need to perform an ARP exchange every time it wants to send packets out, but can reach inside its ARP Cache first and, if the targetted ip address is present, it can just use the mapped MAC address from the cache. Let's look at the ARP Cache in each of our four namespaces after this exchange completes:</p>
+<p><code>#sudo ip netns exec host1 arp -av
+<br>&nbsp? (10.0.1.3) at e2:28:37:70:1c:47 [ether] on host1_in
+<br>&nbspEntries: 1	Skipped: 0	Found: 1
+<br>#sudo ip netns exec host2 arp -av
+<br>&nbsp? (10.0.1.2) at 66:2a:80:6e:cc:60 [ether] on host2_in
+<br>&nbspEntries: 1	Skipped: 0	Found: 1
+<br>#sudo ip netns exec host3 arp -av
+<br>&nbspEntries: 0	Skipped: 0	Found: 0
+<br>#sudo ip netns exec routing arp -av
+<br>&nbspEntries: 0	Skipped: 0	Found: 0
+</code></p>
+<p>We can see that both <code>host1</code> and <code>host2</code> have one entry in their ARP Caches, and they map each other's ip addresses to their MAC addresses. But, perhaps confusingly, the <code>routing</code> namespace, which contains our bridge, does not have any entries in its cache. If that's true, then when the bridge received the ARP reply and saw that <code>66:2a:80:6e:cc:60</code> was the destination MAC address, how did it know where to send that frame?</p>
+<p>Recall that ARP is a layer 2/3 protocol. Well, so is the ARP Cache, by necessity then. And recall that our bridge is layer 2 only. So an ARP Cache would do it no good. So it makes sense that the bridge didn't build an ARP Cache, since it wouldn't know what to do with it anyway. But then the question remains - how did the bridge know where to find the device with the destination MAC address? The request was broadcast to everyone, so it didn't need to. But the reply was addressed specifically to one device. So how did it know where to find it?</p>
+<p>It turns out that the bridge maintains its own internal mapping of devices to MAC addresses. Whenever an ethernet frame passes through the bridge, it inspects the source address and, if it doesn't yet have a mapping for that source, it adds it to its internal MAC Table. We can inspect the bridge's MAC Table by running a simple command <code>bridge fdb</code> (fdb standing for "Forwarding DataBase"):</p>
+<p><code>#sudo ip netns exec routing bridge fdb show
+<br>01:00:5e:00:00:6a dev vswitch self permanent
+<br>33:33:00:00:00:6a dev vswitch self permanent
+<br>01:00:5e:00:00:01 dev vswitch self permanent
+<br>33:33:00:00:00:01 dev vswitch self permanent
+<br>33:33:ff:5e:85:b9 dev vswitch self permanent
+<br>66:2a:80:6e:cc:60 dev host1_out master vswitch 
+<br>ca:72:50:17:16:62 dev host1_out vlan 1 master vswitch permanent
+<br>ca:72:50:17:16:62 dev host1_out master vswitch permanent
+<br>01:00:5e:00:00:01 dev host1_out self permanent
+<br>33:33:00:00:00:01 dev host1_out self permanent
+<br>33:33:ff:17:16:62 dev host1_out self permanent
+<br>e2:28:37:70:1c:47 dev host2_out master vswitch 
+<br>c2:6f:4e:a2:0b:dd dev host2_out vlan 1 master vswitch permanent
+<br>c2:6f:4e:a2:0b:dd dev host2_out master vswitch permanent
+<br>01:00:5e:00:00:01 dev host2_out self permanent
+<br>33:33:00:00:00:01 dev host2_out self permanent
+<br>33:33:ff:a2:0b:dd dev host2_out self permanent
+<br>96:ed:f8:66:26:e5 dev host3_out master vswitch 
+<br>5e:ba:cc:5e:85:b9 dev host3_out vlan 1 master vswitch permanent
+<br>5e:ba:cc:5e:85:b9 dev host3_out master vswitch permanent
+<br>01:00:5e:00:00:01 dev host3_out self permanent
+<br>33:33:00:00:00:01 dev host3_out self permanent
+<br>33:33:ff:5e:85:b9 dev host3_out self permanent
+</code></p>
+<p>We can see the MAC address of <code>host2_in</code> in the table: <code>e2:28:37:70:1c:47 dev host2_out master vswitch</code>. This entry tells the bridge that the device whose MAC is <code>e2:28:37:70:1c:47</code> can be found by forwarding any incoming frames to the <code>host2_out</code> device. Likewise we can see that the <code>host1_in</code> MAC address, <code>66:2a:80:6e:cc:60</code>, is reachable via <code>host1_out</code> in this table. Thus, when the bridge receives an ethernet frame destined for <code>66:2a:80:6e:cc:60</code>, it forwards that frame to the <code>host1_out</code> device.</p>
+<p>You'll notice a bunch of other pecularities to this table that are worth mentioning for completeness. If you look at the MAC addresses of all our devices in the network, you'll notice they represent only some of the MACs in this table. You'll also notice that each of our devices have two MAC entries - one with <code>vlan 1</code> and the other without it. The <code>vlan 1</code> mapping indicates there is a virtual LAN filter applied. This just seems to be a default artifact of linux bridges, regardless of whether you actually have VLAN filtering enabled or not.</p>
+<p>But what are all these other mysterious addresses? Well, any MAC addresses beginning with <code>01:00:5e</code> are designated IPv4 multicast addresses and any beginning with <code>33:33</code> are designated IPv6 multicast addresses. We can see that each device the bridge is connected to has IPv4 and IPv6 multicast mappings in place. These are used for various protocols, such as things like DAD, the Duplicate Address Protocol, which is used by IPv6 to determine whether or not an IPv6 address has already been given out, and other protocols. Keep in mind multicast is not broadcast. We saw that the ARP request had a broadcast address as its destination. Broadcasts are ethernet frames intended to be delivered to every other device on the network. Multicasts, on the other hand, are messages which are destined for multiple other devies on the network, but not <i>every</i> device.</p>
+<h2>Analyzing The Packets III: ICMP</h2>
+<p>The layer 2 details are really the core part of this network, since every host on the network is simply connected by a single bridge, MAC routing is actually able to explain the entire story. Of course, the whole point of this exercise was to look at ICMP, and so let's take a look at the ICMP packets that traversed our network:</p>
+<p><code>12:21:43.007450 host1_in 66:2a:80:6e:cc:60 > e2:28:37:70:1c:47, ethertype IPv4 (0x0800), length 98: (tos 0x0, ttl 64, id 4075, offset 0, flags [DF], proto ICMP (1), length 84)
+<br>&nbsp&nbsp10.0.1.2 > 10.0.1.3: ICMP echo request, id 9186, seq 1, length 64
+<br>12:21:43.007451 host1_out 66:2a:80:6e:cc:60 > e2:28:37:70:1c:47, ethertype IPv4 (0x0800), length 98: (tos 0x0, ttl 64, id 4075, offset 0, flags [DF], proto ICMP (1), length 84)
+<br>&nbsp&nbsp10.0.1.2 > 10.0.1.3: ICMP echo request, id 9186, seq 1, length 64
+<br>12:21:43.007451 vswitch 66:2a:80:6e:cc:60 > e2:28:37:70:1c:47, ethertype IPv4 (0x0800), length 98: (tos 0x0, ttl 64, id 4075, offset 0, flags [DF], proto ICMP (1), length 84)
+<br>&nbsp&nbsp10.0.1.2 > 10.0.1.3: ICMP echo request, id 9186, seq 1, length 64
+<br>12:21:43.007477 host2_out 66:2a:80:6e:cc:60 > e2:28:37:70:1c:47, ethertype IPv4 (0x0800), length 98: (tos 0x0, ttl 64, id 4075, offset 0, flags [DF], proto ICMP (1), length 84)
+<br>&nbsp&nbsp10.0.1.2 > 10.0.1.3: ICMP echo request, id 9186, seq 1, length 64
+<br>12:21:43.007478 host2_in 66:2a:80:6e:cc:60 > e2:28:37:70:1c:47, ethertype IPv4 (0x0800), length 98: (tos 0x0, ttl 64, id 4075, offset 0, flags [DF], proto ICMP (1), length 84)
+<br>&nbsp&nbsp10.0.1.2 > 10.0.1.3: ICMP echo request, id 9186, seq 1, length 64
+<br>
+<br>12:21:43.007510 host2_in e2:28:37:70:1c:47 > 66:2a:80:6e:cc:60, ethertype IPv4 (0x0800), length 98: (tos 0x0, ttl 64, id 23445, offset 0, flags [none], proto ICMP (1), length 84)
+<br>&nbsp&nbsp10.0.1.3 > 10.0.1.2: ICMP echo reply, id 9186, seq 1, length 64
+<br>12:21:43.007511 host2_out e2:28:37:70:1c:47 > 66:2a:80:6e:cc:60, ethertype IPv4 (0x0800), length 98: (tos 0x0, ttl 64, id 23445, offset 0, flags [none], proto ICMP (1), length 84)
+<br>&nbsp&nbsp10.0.1.3 > 10.0.1.2: ICMP echo reply, id 9186, seq 1, length 64
+<br>12:21:43.007511 vswitch e2:28:37:70:1c:47 > 66:2a:80:6e:cc:60, ethertype IPv4 (0x0800), length 98: (tos 0x0, ttl 64, id 23445, offset 0, flags [none], proto ICMP (1), length 84)
+<br>&nbsp&nbsp10.0.1.3 > 10.0.1.2: ICMP echo reply, id 9186, seq 1, length 64
+<br>12:21:43.007516 host1_in e2:28:37:70:1c:47 > 66:2a:80:6e:cc:60, ethertype IPv4 (0x0800), length 98: (tos 0x0, ttl 64, id 23445, offset 0, flags [none], proto ICMP (1), length 84)
+<br>&nbsp&nbsp10.0.1.3 > 10.0.1.2: ICMP echo reply, id 9186, seq 1, length 64
+<br>12:21:43.007516 host1_out e2:28:37:70:1c:47 > 66:2a:80:6e:cc:60, ethertype IPv4 (0x0800), length 98: (tos 0x0, ttl 64, id 23445, offset 0, flags [none], proto ICMP (1), length 84)
+<br>&nbsp&nbsp10.0.1.3 > 10.0.1.2: ICMP echo reply, id 9186, seq 1, length 64
+</code></p>
+<p>Nothing here should be too surprising by now. The MAC source and destination addresses remain the same for the ICMP request and reply. The bridge doesn't substitute its own MAC in, all it does is forward the frames along without modifying them. Using its internal MAC Table, the bridge knows exactly which device to forward the ICMP packets to and does not need to flood the network with broadcasts. Thus, the ICMP request flows through our network as expected: <code>host1_in -> host1_out -> vswitch -> host2_out -> host2_in</code>. Likewise, the reply flows through each of these 5 devices in the other direction, completing the exchange.</p>
+</body>
+</html>
