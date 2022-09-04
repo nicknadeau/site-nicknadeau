@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Dropping And Rejecting Packets With Iptables</title>
+<meta name="description" content="Let's look at how we can drop or reject packets with iptables and what the difference between dropping and rejecting is.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>Dropping And Rejecting Packets With Iptables</h1>
+<p><font size="-1">Sunday September 4, 2022.</font>
+<br><font size="-1"><a href="../articles.html">Back To Articles</a></font>
+<p>We're going to take a closer look at the <code>drop</code> and <code>reject</code> targets and how we can use them and how they differ from one another.</p>
+<p>You may ask - Why? The short answer: so you can learn the basics of writing your own firewall, since dropping and rejecting packets is at the heart of a firewall.</p>
+<p><b>Note:</b> Throughout this article, I will be using <code>#</code> to denote the command prompt during any terminal commands I write here, to distinguish output from commands.
+<br><b>Note:</b> This article is written for Linux users. The instructions here, in particular, were tested on an Ubuntu 18.04.6 LTS release.</p>
+<h2>Network Setup</h2>
+<p>We are going to emulate a LAN that has three hosts and a router connecting them all, so that we can experiment with these basic iptables targets. To do this, we will create 4 namespaces, one for each host and one for the router, and we will use a bridge as our router and connect the host namespaces to the bridge via virtual ethernet pairs. Our hosts will be in namespaces <code>host1</code>, <code>host2</code> and <code>host3</code> and our router namespace will be <code>routing</code>. Our host ip addresses will be <code>10.0.1.2</code>, <code>10.0.1.3</code> and <code>10.0.1.4</code> respectively. We will also put all our devices into promiscuous mode, just so we can use <code>tcpdump</code> against them at various points, to see where the packets end up.</p>
+<p>I won't go into the details of setting up this virtual LAN, since those details aren't really the point. If, however, you prefer to follow along and try things out concretely (or just verify that I'm telling the truth!), you can use the same scripts I'm using on my Github repository <a href="https://github.com/nicknadeau/netns-packet-analysis">netns-packet-analysis</a>, or check out some of my articles on namespaces, such as <a href="bridging_multiple_network_namespaces.html">Bridging Multiple Network Namespaces</a>, where similar setups are used.</p>
+<p>Before we move on, as a sanity check let's try a few pings:</p>
+<p><code>#sudo ip netns exec host1 ping -c1 10.0.1.3
+<br>&nbspPING 10.0.1.3 (10.0.1.3) 56(84) bytes of data.
+<br>&nbsp64 bytes from 10.0.1.3: icmp_seq=1 ttl=64 time=0.062 ms
+<br>#sudo ip netns exec host2 ping -c1 10.0.1.4
+<br>&nbspPING 10.0.1.4 (10.0.1.4) 56(84) bytes of data.
+<br>&nbsp64 bytes from 10.0.1.4: icmp_seq=1 ttl=64 time=0.064 ms
+<br>#sudo ip netns exec host3 ping -c1 10.0.1.2
+<br>&nbspPING 10.0.1.2 (10.0.1.2) 56(84) bytes of data.
+<br>&nbsp64 bytes from 10.0.1.2: icmp_seq=1 ttl=64 time=0.059 ms
+</code></p>
+<h2>Viewing Our Iptables</h2>
+<p>Recall that we have segregated our hosts and router in different namespaces. A namespace acts as its own virtually isolated network stack. In other words, it allows us to emulate separate machines. Each of our namespaces will have its own iptables, which are distinct and unrelated to the iptables of any other namespace on the system. Let's list all of the iptables rules that exist in our <code>routing</code> namespace. We tell iptables to list its fules (<code>-L</code>), be verbose (<code>-v</code>) and output sources/destinations numerically, as ip addresses, and not attempt to resolve them as hostnames). We also are only looking at the <code>filter</code> table, since that's the only table of interest to us for this article:</p>
+<p><code>sudo ip netns exec routing iptables -t filter -n -v -L
+<br>&nbspChain INPUT (policy ACCEPT 0 packets, 0 bytes)
+<br>&nbsp&nbsppkts bytes target     prot opt in     out     source               destination         
+<br>
+<br>&nbspChain FORWARD (policy ACCEPT 6 packets, 504 bytes)
+<br>&nbsp&nbsppkts bytes target     prot opt in     out     source               destination         
+<br>
+<br>&nbspChain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
+<br>&nbsp&nbsppkts bytes target     prot opt in     out     source               destination
+</code></p>
+<p>We can see each of the three pre-defined chains listed in the output, <code>INPUT</code>, <code>OUTPUT</code>, and <code>FORWARD</code>. We also see each entry has a header below the chain name, which begins with <code>pkts bytes ...</code>, but there is no information below any of these headers yet, indicating none of these three chains has any rules. The default policy of every chain is to accept packets (we can see this in the <code>policy ACCEPT</code> bit next to the chain names), which means that chain will allow the packets to pass through. Notice that our <code>INPUT</code> and <code>OUTPUT</code> chains have not processed any packets yet but our <code>FORWARD</code> chain has processed 6 so far. These 6 packets were the 3 pings we sent out, since each ping consists of a request and a reply. It shouldn't be a surprise that they traversed the <code>FORWARD</code> chain rather than the <code>INPUT</code> or <code>OUTPUT</code> chains. After all, the <code>FORWARD</code> chain is for packets that are coming from an external network and being routed through us to another external network. Since our hosts and the router are in separate namespaces, these namespaces act as distinct networks from one another, and so that is exactly what's happening. No packets were originating from within the <code>routing</code> namespace and therefore nothing hit the <code>OUTPUT</code> chain, and likewise no packets were to be delivered into the <code>routing</code> namespace and thus the <code>INPUT</code> chain was not hit either.</p>
+<p>Let's take a look at one of our host iptables. Each host sent 1 ping and received 1 ping. This means each host namespace was the origin of 2 packets (the ping request for the ping they sent out, and the ping reply for the ping they responded to) and was also the destination of 2 packets (the ping reply for the ping they sent out, and the ping request for the ping they received). No packets should have entered the namespace externally that were not destined for that namespace, and so we should expect there to be zero forwarded packets. Let's see the actual results:</p>
+<p><code>#sudo ip netns exec host1 iptables -t filter -n -v -L
+<br>&nbspChain INPUT (policy ACCEPT 2 packets, 168 bytes)
+<br>&nbsp&nbsppkts bytes target     prot opt in     out     source               destination         
+<br>
+<br>&nbspChain FORWARD (policy ACCEPT 0 packets, 0 bytes)
+<br>&nbsp&nbsppkts bytes target     prot opt in     out     source               destination         
+<br>
+<br>&nbspChain OUTPUT (policy ACCEPT 2 packets, 168 bytes)
+<br>&nbsp&nbsppkts bytes target     prot opt in     out     source               destination
+</code></p>
+<p>The results were as expected. The other two host namespaces have the same results in their iptables.</p>
+<h2>Dropping Packets</h2>
+<p>Let's look at how to drop packets. If an iptable rule's condition matches a packet, and the target of that rule is <code>DROP</code>, then the kernel will immediately discard that packet. It will not arrive at its destination and its journey through the network stack will abruptly end. There are two ways we can accomplish this. We can make an explicit rule to drop packets and attach that rule to a chain, or we can change the default policy of one of our chains from <code>ACCEPT</code> to <code>DROP</code>.</p>
+<p>Let's first look at changing the policy to <code>DROP</code> in the <code>FORWARD</code> chain of the <code>routing</code> namespace. All packets must flow through this chain in this namespace, and so we expect all packets to be dropped.</p>
+<p><code>#sudo ip netns exec routing iptables -t filter --policy FORWARD DROP</code></p>
+<p>Now, if we try to ping any host from any other host, we will notice that our ping attempts just hang. That's because our ping requests are being dropped and ping is waiting for a reply, while also attempting to retransmit packets it believes were dropped. Eventually your ping will timeout and you'll see something like this:</p>
+<p><code>#sudo ip netns exec host3 ping -c1 10.0.1.2
+<br>&nbspPING 10.0.1.2 (10.0.1.2) 56(84) bytes of data.
+<br>
+<br>&nbsp--- 10.0.1.2 ping statistics ---
+<br>&nbsp1 packets transmitted, 0 received, 100% packet loss, time 0ms
+</code></p>
+<p>If we list our iptables chains for the <code>routing</code> namespace once again, we now see that the <code>FORWARD</code> chain has its policy set as <code>DROP</code> and that this policy caught our ping packet:</p>
+<p><code>&nbspChain INPUT (policy ACCEPT 0 packets, 0 bytes)
+<br>&nbsp&nbsppkts bytes target     prot opt in     out     source               destination         
+<br>
+<br>&nbspChain FORWARD (policy DROP 1 packets, 84 bytes)
+<br>&nbsp&nbsppkts bytes target     prot opt in     out     source               destination         
+<br>
+<br>&nbspChain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
+<br>&nbsp&nbsppkts bytes target     prot opt in     out     source               destination
+</code></p>
+<p>Let's set our policy back to <code>ACCEPT</code> now, and instead set a rule in our <code>FORWARD</code> chain, which will drop all packets it sees:</p>
+<p><code>#sudo ip netns exec routing iptables -t filter --policy FORWARD ACCEPT
+<br>#sudo ip netns exec routing iptables -t filter -A FORWARD -j DROP
+</code></p>
+<p>The above command appends (<code>-A</code>) a rule to the <code>FORWARD</code> table. The rule mentions no conditions explicitly and therefore is satisfied by any packet. The target is given by the <code>-j</code> flag, which stands for jump, telling us that any such packets should have the <code>DROP</code> target applied to them.</p>
+<p>Let's have a look at our <code>FORWARD</code> chain rules now:</p>
+<p><code>Chain FORWARD (policy ACCEPT 0 packets, 0 bytes)
+<br>&nbsppkts bytes target     prot opt in     out     source&nbsp&nbsp&nbsp&nbsp&nbspdestination         
+<br>&nbsp0&nbsp&nbsp&nbsp&nbsp0&nbsp&nbsp&nbsp&nbsp&nbspDROP&nbsp&nbsp&nbspall&nbsp&nbsp--&nbsp&nbsp*&nbsp&nbsp*&nbsp&nbsp&nbsp0.0.0.0/0&nbsp&nbsp0.0.0.0/0
+</code></p>
+<p>Let's quickly go over how to read this output. The <code>pkts</code> column displays the number of packets that matched this rule. The <code>bytes</code> column displays the number of bytes in all the packets that matched this rule. The <code>target</code> column is the target action to be taken for any matched packets. The <code>prot</code> column lists the type of protocol the packet must be to match this rule (we did not specify a particular protocol, so by default we match all protocols). The <code>opt</code> column describes the options to match against. The <code>in</code> column describes the network device that will receive the packets in order to satify a match (we specified no device in particular, so we match all devices). The <code>out</code> column is the same as <code>in</code> but for the network device transmitting the packets. The <code>source</code> column describes the ip address or subnet of the sender of the packet in order to satisfy a match (we specified no explicitly sender address so we match against any sender). The <code>destination</code> is the same as <code>source</code> butfor the destination ip address or subnet.</p>
+<p>If we try to ping any of the host namespaces from any other one, we notice that we get the same effect - the packets are never delivered.</p>
+<p>It's worth noting that we didn't have to accomplish the blocking of all packets in the router namespace the way we did. We could have blocked all packets on each of our hosts as well for the same effect. We could have also made our rules in the <code>routing</code> namespace more fine-grained and still accomplished the same result.</p>
+<h2>Rejecting Packets In The Router</h2>
+<p>We saw that dropped packets are simply removed from the network stack and never delivered to their destination. Sometimes that's what you want. Afterall, it does make it appear that there is no machine with an ip address when it simply never responds back. But sometimes you want the machine to explicitly inform you that it is not servicing your packets. In that case, rejecting the packets is more appropriate.</p>
+<p>We are going to leave our packet <code>DROP</code> rule in place from the previous section and then add our <code>REJECT</code> rule on top of it. Recall that the rules in a chain are executed in order, so all we have to do is place our new rule before the old one and any packets which match it will be rejected. Any packets which don't match it will then go down to the drop rule and match that (since it matches everything). Our new rule is going to be to reject all ICMP packets sent from, or delivered to, <code>10.0.1.2</code>.</p>
+<p><code>#sudo ip netns exec routing iptables -t filter -I FORWARD 1 -p icmp -s 10.0.1.2/24 -d 10.0.1.2/24 -j REJECT</code></p>
+<p>This command says to insert (<code>-I</code>) the new rule into position number <code>1</code> in the <code>FORWARD</code> chain of the <code>filter</code> table, and that it will match against any packets whose protocol is <code>icmp</code> and whose source or destination address is <code>10.0.1.2</code>, and that the target action to be taken on a match is to reject the packet.</p>
+<p>Here's our <code>FORWARD</code> chain now:</p>
+<p><code>Chain FORWARD (policy ACCEPT 0 packets, 0 bytes)
+<br>&nbsppkts bytes target     prot opt in     out     source&nbsp&nbsp&nbsp&nbsp&nbsp&nbspdestination         
+<br>&nbsp0&nbsp&nbsp&nbsp&nbsp0&nbsp&nbsp&nbsp&nbsp&nbspREJECT     icmp --&nbsp&nbsp*&nbsp&nbsp*&nbsp&nbsp&nbsp10.0.1.2/24&nbsp10.0.1.2/24
+<br>&nbsp0&nbsp&nbsp&nbsp&nbsp0&nbsp&nbsp&nbsp&nbsp&nbspDROP&nbsp&nbsp&nbspall&nbsp&nbsp--&nbsp&nbsp*&nbsp&nbsp*&nbsp&nbsp&nbsp0.0.0.0/0&nbsp&nbsp&nbsp0.0.0.0/0
+</code></p>
+<p>Let's try to send a ping from host2 to host3. It should not match the first rule, and so we expect it to be dropped. Just to get a little more insight into what's going on, we will also run <code>tcpdump</code> in our various namespaces so we can see how the packets move through the network. I'll be using the <code>run_tcpdumps.sh</code> script in my <a href="https://github.com/nicknadeau/netns-packet-analysis">netns-packet-analysis</a> repository to capture the dumps. Here's the command we are running to ping host3 from host2:</p>
+<p><code>#sudo ip netns exec host2 ping -c1 10.0.1.4</code></p>
+<p>When we run <code>iptables -t filter -n -v -L</code> in our various namespaces, we see that the host1 iptables captured zero packets, as expected. The host2 iptables captured one packet in the <code>OUTPUT</code> chain - the outgoing ping. The host3 iptables captured zero packets, since the ping was dropped by our bridge it never makes it here. Let's take a look at the ping moving through the network:</p>
+<p><code>13:57:45.803426 host2_in IP 10.0.1.3 > 10.0.1.4: ICMP echo request, id 8444, seq 1, length 64
+<br>13:57:45.803427 host2_out IP 10.0.1.3 > 10.0.1.4: ICMP echo request, id 8444, seq 1, length 64
+<br>13:57:45.803427 vswitch IP 10.0.1.3 > 10.0.1.4: ICMP echo request, id 8444, seq 1, length 64
+</code></p>
+<p>We see the ping request put onto <code>host2_in</code>, the end of the veth that's inside the <code>host2</code> namespace. It gets transmitted over to <code>host2_out</code>, which is inside the <code>routing</code> namespace. And finally, the bridge, <code>vswitch</code>, picks up the packet from the veth end connected to it. After that point, it is dropped. Its transmission ends.</p>
+<p>An astute observer may find this a little suspicious though. After all, in order for ping to construct its ICMP packet, the ethernet frame needed to be constructed, requiring the MAC address, and the MAC address could only be obtained by sending around ARP messages between the two host namespaces across the bridge. But our iptables rule drops all packets. So shouldn't the ARP exchange have failed, and as a result the original ping request shouldn't have even been able to be constructed in the first place, right? In fact, looking at our dump, we see the ARP exchange was fully carried out across our network, so what gives?</p>
+<p>Actually, iptables operates at layer 3 of the OSI model and above, not at layer 2, which is the layer ARP resides at. Thus, even though we are matching against all protocols for our drop rule, ARP is not one of these protocols. You can prove this to yourself by trying to create a rule with <code>-p arp</code> in it to specify the ARP protocol. Or, have a look inside <code>/etc/protocols</code> to see all the supported protocols.</p>
+<p>Alright, with that out of the way, let's now try and send a ping from host1 to host2. This should hit our reject rule. Again, we'll take a <code>tcpdump</code> of all our namespaces so we can see what's going on.</p>
+<p>After running the ping, we see that our reject rule caught the packet when we list our rules. However, we didn't get an explicit rejection message. Instead, things looked the same as when we dropped the packet. Looking at our dump confirms this - the dump looks identical to the dropped rule. But our table clearly indicates the reject rule caught the packet. So what's happening? Recall that it is our bridge device that is forwarding the packet around, and which has the packet when the reject rule is matched. The reject rule says that it should send back an ICMP port unreachable reply, but our bridge is a layer 2 device and knows nothing of ICMP. It therefore doesn't send out the suggested reply, and our rejection doesn't look any different from a drop as a result.</p>
+<h2>Rejecting Packets In The Host</h2>
+<p>If we really want to make full use of the ICMP rejection, then we need to reject the packet on our host, where it is able to send out an appropriate reply. Let's flush (<code>-F</code>) our routing rules, add back our drop rule, and then substitute our reject rule for an accept, keeping everything else the same. Thus, allowing ICMP packets to and from <code>host1</code>. After doing that, we will then add a rule to the <code>INPUT</code> chain of <code>host1</code> to reject all incoming ICMP packets:</p>
+<p><code>#sudo ip netns exec routing iptables -t filter -F
+<br>#sudo ip netns exec routing iptables -t filter -A FORWARD -j DROP
+<br>#sudo ip netns exec routing iptables -t filter -I FORWARD 1 -p icmp -s 10.0.1.2/24 -d 10.0.1.2/24 -j ACCEPT
+<br>#sudo ip netns exec host1 iptables -t filter -I INPUT 1 -p icmp -j REJECT
+</code></p>
+<p>Let's now send a ping from host2 to host1 and capture our dump and see what happens. The first thing we notice is that our ping command did not hang but returned immediately with an unreachable message:</p>
+<p><code>PING 10.0.1.2 (10.0.1.2) 56(84) bytes of data.
+<br>From 10.0.1.2 icmp_seq=1 Destination Port Unreachable
+<br>
+<br>--- 10.0.1.2 ping statistics ---
+<br>1 packets transmitted, 0 received, +1 errors, 100% packet loss, time 0ms
+</code></p>
+<p>If we have a look at our <code>tcpdump</code> output, we see that the ping request was successfully sent from host2's veth end through the bridge and to host1's veth end:</p>
+<p><code>14:44:30.990206 host2_in IP 10.0.1.3 > 10.0.1.2: ICMP echo request, id 13133, seq 1, length 64
+<br>14:44:30.990207 host2_out IP 10.0.1.3 > 10.0.1.2: ICMP echo request, id 13133, seq 1, length 64
+<br>14:44:30.990207 vswitch IP 10.0.1.3 > 10.0.1.2: ICMP echo request, id 13133, seq 1, length 64
+<br>14:44:30.990217 host1_out IP 10.0.1.3 > 10.0.1.2: ICMP echo request, id 13133, seq 1, length 64
+<br>14:44:30.990218 host1_in IP 10.0.1.3 > 10.0.1.2: ICMP echo request, id 13133, seq 1, length 64
+</code></p>
+<p>But we also see that host1 fabricated an unreachable ICMP reply and sent it across the bridge successfully to host2:</p>
+<p><code>14:44:30.990236 host1_in IP 10.0.1.2 > 10.0.1.3: ICMP nick protocol 1 port 20334 unreachable, length 92
+<br>14:44:30.990237 host1_out IP 10.0.1.2 > 10.0.1.3: ICMP 10.0.1.2 protocol 1 port 20334 unreachable, length 92
+<br>14:44:30.990237 vswitch IP 10.0.1.2 > 10.0.1.3: ICMP 10.0.1.2 protocol 1 port 20334 unreachable, length 92
+<br>14:44:30.990241 host2_out IP 10.0.1.2 > 10.0.1.3: ICMP 10.0.1.2 protocol 1 port 20334 unreachable, length 92
+<br>14:44:30.990242 host2_in IP 10.0.1.2 > 10.0.1.3: ICMP 10.0.1.2 protocol 1 port 20334 unreachable, length 92
+</code></p>
+<p>Looking at our iptables, we see that our reject rule in the <code>INPUT</code> chain of host1 captured 1 packet, the incoming ping request, and that its <code>OUTPUT</code> chain captured 1 packet with its default <code>ACCEPT</code> policy, the outgoing unreachable reply. The host2 tables caught 1 packet in both the <code>INPUT</code> and <code>OUTPUT</code> as expected, and the routing namespace caught 2 packets in its <code>ACCEPT</code> rule we provided - the request and reply.</p>
+<p>One last thing to note. Given the above rules, you might think that what we have set up allows for host1 to ping other hosts but for nobody to be able to ping host1. After all, the host1 rejection rule is in the <code>INPUT</code> chain, where incoming packets arrive, and not the <code>OUTPUT</code> chain. So, host1 should be able to transmit a ping to host2. Since host2 has no rules in place, it replies back. The router allows all traffic to and from host1, so it passes the reply back over, and host1's ping completed its round trip. This sounds intuitive enough, but actually if you try to ping host2 from host1, you'll notice that the ping hangs as if the packets were dropped. So... what the hell?</p>
+<p>With iptables, you've got to really keep in mind where each of the chains reside in the netfilter framework. You may want to review my article on this again: <a href="overview_of_iptables_and_netfilter.html">Overview Of Iptables And Netfilter</a>. It's true that host1 is able to send a ping request out of its network just fine. That request will hit the <code>OUTPUT</code> chain, which lets everything through, and the bridge will forward the packet to host2 as expected. It's also true that host2 will construct and transmit its ICMP reply just fine as well, since it has no local rules preventing that, and that the bridge will forward that reply over to host1. However, the ICMP reply comes into host1's network from outside and therefore this reply packet hits the <code>INPUT</code> chain, and since our rule there matches all ICMP packets it is told to reject this packet. Of course, a rejection is the same thing as a drop, as we learned above, except that a port unreachable ICMP response packet is transmitted back if possible. So, the reply is effectively dropped before it ever hits the ping process and that's why the ping hangs. In fact, if you look at the <code>tcpdump</code> you'll see that host1 even transmits an unreachable ICMP reply back to host2 after it receives its good reply.</p>
+<h2>Other Iptables Articles</h2>
+<p>There's a lot to iptables, and as such, I'll be writing a few articles about the topic. Here's what I've written so far:</p>
+<ul>
+<li><a href="overview_of_iptables_and_netfilter.html">Overview Of Iptables And Netfilter</a>
+</ul>
+</body>
+</html>
