@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Custom Iptables Chains</title>
+<meta name="description" content="Let's look at how we can create our own custom iptables chains. We will also make use of the return target and iptables extended matching capabilities.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>Custom Iptables Chains</h1>
+<p><font size="-1">Sunday September 4, 2022.</font>
+<br><font size="-1"><a href="../articles.html">Back To Articles</a></font>
+<p>We're going to look into how we can create our own custom iptables chains.</p>
+<p>You may ask - Why? The short answer: so you can learn the basics of writing your own firewall, since custom chains used to segregate rules is one of the fundamental means of reducing firewall complexity.</p>
+<p><b>Note:</b> Throughout this article, I will be using <code>#</code> to denote the command prompt during any terminal commands I write here, to distinguish output from commands.
+<br><b>Note:</b> This article is written for Linux users. The instructions here, in particular, were tested on an Ubuntu 18.04.6 LTS release.</p>
+<h2>Network Setup</h2>
+<p>We are going to use the same network setup as we used in the <a href="dropping_and_rejecting_packets_with_iptables.html">Dropping And Rejecting Packets With Iptables</a> article. For this, we are going to emulate a LAN that has three hosts and a router connecting them all, so that we can experiment with these basic iptables targets. To do this, we will create 4 namespaces, one for each host and one for the router, and we will use a bridge as our router and connect the host namespaces to the bridge via virtual ethernet pairs. Our hosts will be in namespaces <code>host1</code>, <code>host2</code> and <code>host3</code> and our router namespace will be <code>routing</code>. Our host ip addresses will be <code>10.0.1.2</code>, <code>10.0.1.3</code> and <code>10.0.1.4</code> respectively. We will also put all our devices into promiscuous mode, just so we can use <code>tcpdump</code> against them at various points, to see where the packets end up.</p>
+<p>I won't go into the details of setting up this virtual LAN, since those details aren't really the point. If, however, you prefer to follow along and try things out concretely (or just verify that I'm telling the truth!), you can use the same scripts I'm using on my Github repository <a href="https://github.com/nicknadeau/netns-packet-analysis">netns-packet-analysis</a>, or check out some of my articles on namespaces, such as <a href="bridging_multiple_network_namespaces.html">Bridging Multiple Network Namespaces</a>, where similar setups are used.</p>
+<p>Before we move on, as a sanity check let's try a few pings:</p>
+<p><code>#sudo ip netns exec host1 ping -c1 10.0.1.3
+<br>&nbspPING 10.0.1.3 (10.0.1.3) 56(84) bytes of data.
+<br>&nbsp64 bytes from 10.0.1.3: icmp_seq=1 ttl=64 time=0.062 ms
+<br>#sudo ip netns exec host2 ping -c1 10.0.1.4
+<br>&nbspPING 10.0.1.4 (10.0.1.4) 56(84) bytes of data.
+<br>&nbsp64 bytes from 10.0.1.4: icmp_seq=1 ttl=64 time=0.064 ms
+<br>#sudo ip netns exec host3 ping -c1 10.0.1.2
+<br>&nbspPING 10.0.1.2 (10.0.1.2) 56(84) bytes of data.
+<br>&nbsp64 bytes from 10.0.1.2: icmp_seq=1 ttl=64 time=0.059 ms
+</code></p>
+<h2>Creating A Custom Chain</h2>
+<p>Creating a custom chain is mostly useful for segregating your iptables rules, so that you don't end up with an overwhelming list of rules but can disperse them out across multiple chains and call into those chains to simplify the logic. You can also reuse a group of rules easily, by placing them all in their own chain and simply referencing those chains from multiple other ones, so that they can inherit the same logic. Let's create two new (<code>-N</code>) chains in <code>host1</code> named <code>NO_ICMP_REPLY</code> and <code>NO_ICMP_REQUEST</code>:</p>
+<p><code>#sudo ip netns exec host1 iptables -t filter -N NO_ICMP_REPLY
+<br>#sudo ip netns exec host1 iptables -t filter -N NO_ICMP_REQUEST
+</code></p>
+<p>Now, if we list our iptables in <code>host1</code>, using <code>iptables -t filter -n -v -L</code>, we can see that our new chains were created:</p>
+<p><code>Chain NO_ICMP_REPLY (0 references)
+<br>&nbsppkts bytes target     prot opt in     out     source               destination
+<br>
+<br>Chain NO_ICMP_REQUEST (0 references)
+<br>&nbsppkts bytes target     prot opt in     out     source               destination
+</code></p>
+<p>Neither has any rules yet. One other difference though, is that instead of a default policy being listed it instead says <code>0 references</code>. Recall that iptables provides 5 default chains, each of which is connected to one of the 5 hooks in the netfilter framework. Our new chains have nowhere to hook into, because iptables does not allow you to create a new chain and hook it wherever you'd like. Instead, your custom chains are only reachable via the default chains iptables gives you. The way you reach them is by setting the chain as a target, using the jump <code>-j</code> flag. Once you do this, your chain will be referenced and thus reachable via whichever chain(s) jump to it.</p>
+<p>Let's add some rules to our custom chains first. What we want to do is allow <code>host1</code> to ping the outside world, but not allow the outside world to ping <code>host1</code>. In a previous article, <a href="dropping_and_rejecting_packets_with_iptables.html">Dropping And Rejecting Packets With Iptables</a>, we saw a naive attempt at this that failed because it did not take into account the two-way nature of the ICMP protocol and actually dropped the successful reply packet when it arrived, rather than delivering it to the ping process. What we really need is more fine-grained control. We need to drop incoming ping requests and outgoing ping replies. True, since both these steps are necessary for a successful ping, we only need to drop one of them, but for completeness we will do both.</p>
+<p>To accomplish this, we need to make use of iptables extended matching features, which provide a more powerful set of matching capabilities. Run <code>man iptables-extensions</code> for the documentation on these. Here's the rules we are going to add:</p>
+<p><code>#sudo ip netns exec host1 iptables -t filter -A NO_ICMP_REPLY -p icmp --icmp-type echo-reply -j DROP
+<br>#sudo ip netns exec host1 iptables -t filter -A NO_ICMP_REQUEST -p icmp --icmp-type echo-request -j DROP
+</code></p>
+<p>These commands append (<code>-A</code>) the new rules to our <code>NO_ICMP_REPLY</code> and <code>NO_ICMP_REQUEST</code> chains. The first matches against any <code>icmp</code> protocol packets and specifically any ICMP packets whose type is <code>echo-reply</code>, and any matching packets will be dropped. The second matches against <code>echo-request</code> ICMP packets and drops them.</p>
+<p>Now, let's reference these chains using the other default chains iptables gives us, so that our new rules are reachable.</p>
+<p><code>#sudo ip netns exec host1 iptables -t filter -A INPUT -p icmp -j NO_ICMP_REQUEST
+<br>#sudo ip netns exec host1 iptables -t filter -A OUTPUT -p icmp -j NO_ICMP_REPLY
+</code></p>
+<p>In other words, any ICMP packets which hit our <code>INPUT</code> chain will jump to our new request chain, and any ICMP packets which hit our <code>OUTPUT</code> chain will jump to our new reply chain. Yes, this is a very contrived example. It is just to show how we use custom chains. This sort of example wouldn't merit using custom chains in the real world. After listing our iptables, we see both our chains now have <code>1</code> reference.</p>
+<p>Now if we ping <code>host2</code> from <code>host1</code> we see that the ping worked successfully:</p>
+<p><code>#sudo ip netns exec host1 ping -c1 10.0.1.3
+<br>&nbspPING 10.0.1.3 (10.0.1.3) 56(84) bytes of data.
+<br>&nbsp64 bytes from 10.0.1.3: icmp_seq=1 ttl=64 time=0.083 ms
+<br>
+<br>&nbsp--- 10.0.1.3 ping statistics ---
+<br>&nbsp1 packets transmitted, 1 received, 0% packet loss, time 0ms
+<br>&nbsprtt min/avg/max/mdev = 0.083/0.083/0.083/0.000 ms
+</code></p>
+<p>If, on the other hand, we try to ping <code>host1</code> from <code>host2</code>, our ping command hangs for awhile and then eventually times out:</p>
+<p><code>#sudo ip netns exec host2 ping -c1 10.0.1.2
+<br>&nbspPING 10.0.1.2 (10.0.1.2) 56(84) bytes of data.
+<br>
+<br>&nbsp--- 10.0.1.2 ping statistics ---
+<br>&nbsp1 packets transmitted, 0 received, 100% packet loss, time 0ms
+</code></p>
+<h2>The Return Target</h2>
+<p>Let's wrap this article up by looking at the last of the basic target types iptables gives us, since it is especially useful for when we have one chain referencing another: the <code>RETURN</code> target. The way that an action is determined by iptables is by executing the rules in a chain one by one. If a packet matches the criteria for a rule, then its target action is taken, and no other rules are looked at. It is possible, though, that a target may be non-terminating, in which case the action to take has not determined yet. This is true when the target is another chain, such as when a rule in one chain jumps to another chain, as in our examples above. That first rule is not a terminating target, it just moves our evluation to another point. The terminating target was reached when the packet matched against our custom rule and was dropped. If the packet did not match any rule in our custom chain, though, then execution returns back to the calling chain. If there are no remaining rules, or all remaining rules don't match the packet, then finally the default policy of that chain is the action to be taken.</p>
+<p>In some cases, though, it is useful to return early from evaluating the rules in a chain. That's what the <code>RETURN</code> target is for. It tells iptables that, if any packet has this action, then evaluation should return back to the calling chain and continue where it left off there. It's also a non-terminating action, then. Let's say we wanted to make an exception for who can ping <code>host1</code>, so that <code>host3</code> is allowed. There are several ways we could do that, and one of them is to put a return rule in both of our custom chains prior to the drop rules, for when we are receiving or sending ICMP packets to and from <code>host3</code>.</p>
+<p>Before we do this, try pinging <code>host1</code> from <code>host3</code> just to convince yourself that this is currently not allowed in our setup. Then, add these rules:</p>
+<p><code>#sudo ip netns exec host1 iptables -t filter -I NO_ICMP_REQUEST 1 -p icmp -s 10.0.1.4 -j RETURN
+<br>#sudo ip netns exec host1 iptables -t filter -I NO_ICMP_REPLY 1 -p icmp -d 10.0.1.4 -j RETURN
+</code></p>
+<p>Now, if we ping <code>host1</code> from <code>host3</code> the ping works, but it still fails when from <code>host2</code>.</p>
+<h2>Other Iptables Articles</h2>
+<p>There's a lot to iptables, and as such, I'll be writing a few articles about the topic. Here's what I've written so far:</p>
+<ul>
+<li><a href="overview_of_iptables_and_netfilter.html">Overview Of Iptables And Netfilter</a>
+<li><a href="dropping_and_rejecting_packets_with_iptables.html">Dropping And Rejecting Packets With Iptables</a>
+</ul>
+</body>
+</html>
