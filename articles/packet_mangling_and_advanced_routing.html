@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Marked Packet Routing</title>
+<meta name="description" content="Let's look at how we can use the iptables mangle table to mark packets and then route those packets based off those marks.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>Marked Packet Routing</h1>
+<p><font size="-1">Friday September 9, 2022.</font>
+<br><font size="-1"><a href="../articles.html">Back To Articles</a></font>
+<p>We're going to look into how we can use iptables to mark incoming packets and then set up routing rules to route based off those marks.</p>
+<p>You may ask - Why? The short answer: to explore a more advanced routing topic and how we can leverage iptables to help with it.</p>
+<p><b>Note:</b> Throughout this article, I will be using <code>#</code> to denote the command prompt during any terminal commands I write here, to distinguish output from commands.
+<br><b>Note:</b> This article is written for Linux users. The instructions here, in particular, were tested on an Ubuntu 18.04.6 LTS release.</p>
+<h2>Network Setup</h2>
+<p>Our network setup will be very simple for this. We will create two namespaces to emulate two different host machines, and we will connect them directly by placing one end of a virtual ethernet pair into each namespace. We will put our devices into promiscuous mode so that we can run <code>tcpdump</code> against them and capture everything (though all packets should arrive as intended, so promiscuous mode is a bit overkill for this), since we need <code>tcpdump</code> to see the change to the packets. The two host namespaces will be called <code>host1</code> and <code>host2</code>, and their ip addresses will be <code>10.0.1.2</code> and <code>10.0.1.3</code> respectively. I won't go into the details of setting up this virtual network, since those details aren't really the point. If, however, you were interested in how to reproduce the setup, see my article on exactly this same setup: <a href="connecting_two_network_namespaces_over_veth.html">Connecting Two Network Namespaces Over Veth</a>.</p>
+<h2>The Mangle Table</h2>
+<p>In order to mangle packets, we are going to have to place our rules inside the <code>mangle</code> table. The rules we need to use for this are not valid in other tables. It's also worth noting that the ability to mangle packets is fairly narrow - while implmenenting NAT clearly requires "mangling" of a packet, the rules for NAT are only valid in the <code>nat</code> table and therefore are outside the scope of what we are going to do here. I will be writing a separate article on how to implement NAT, for those who are curious. It's also worth keeping in mind that packet mangling is about modifying the header of a packet and nothing else - you can't do something like modify the payload. The one exception to this is marking packets. These marks are not captured in the packet header, they are purely abstractions within the kernel.</p>
+<p>See my article <a href="overview_of_iptables_and_netfilter.html">Overview Of Iptables And Netfilter</a> for a refresher on netfilter and how iptables is implemented. The mangle table allows us to attach to all 5 of the netfilter hooks, and therefore gives us access to all 5 of the default chains. Also, recall that the mangle table is the table with the second-most priority of all the iptables tables, so any mangling we perform here may take effect prior to your rules in other tables, depending on which chain you are doing things in.</p>
+<p>In terms of what we can mangle, well, as I mentioned, our options are fairly limited. We can mangle the <code>TOS</code> (Type Of Service) and <code>TTL</code> (Time To Live) fields of the IP header. In addition to this, we can also <i>mark</i> a packet - this is often the most useful feature of the mangle table since we can use this marks to make advanced routing decisions on packets. We will look at each of these in turn.</p>
+<h2>TODO</h2>
+
+May need to enable routing: echo "1" > /proc/sys/net/ipv4/ip_forward
+
+
+Try:
+	2 devices in net1 with the same subnet, each going to other ns. Other ns have same ip as one another.
+	ping that ip should go through one of those links depending on the routing table, verify this. Change the ordering and verify this.
+	now try to mark in PREROUTING and add a routing rule for the mark to verify this works.
+
+	yes, we can use the metric value of the routes to change which device the packet gets sent down and via which ip.
+	now, try marking the packets and using the rule.
+
+	for our example we can use TCP and route based off destination ports.
+
+	I just tried setting the mark for ICMP packets, mark with 0x2
+	I then created a new routing table 'new' with a route: 10.0.1.0/24 via 10.0.1.4 dev veth2_in
+	I then created a new rule: 32765:	from all fwmark 0x2 lookup new
+
+	I can see that the mangle chain rule was hit
+	But the packet was sent through veth1_in as 10.0.1.3. So it apparently did not go down this look up path.
+	I wonder if we need to set the ip_forward value to enable our kernel to even use the fwmark rule at all -- just checked, I already have this set.
+
+	Actually, I believe I simply marked the wrong packet, the incoming one, because my rule is in PREROUTING.
+	For outbound packets, I need to set my rule in OUTPUT.
+
+	Ok, I can now see that my traffic went through veth2_out
+		However! I did not get assigned source address 10.0.1.4 as my route suggests but 10.0.1.3
+		Also, I can see the Request go from veth2_in->veth2_out and the Replay go from veth2_out->veth2_in BUT the ping did not work! Why not ??
+		I can see the ARP exchange worked, 10.0.1.2 told its MAC to 10.0.1.3.
+		BUT.. for some reason, after veth2_out Replies, it issues multiple ARPs for 10.0.1.3 to tell its MAC (since these come in on veth2_out it doesn't answer - it is 10.0.1.4).
+
+		If I changed the ip address of the device, I suspect things would work.
+		But the question here is -- why did our packet get assigned src address 10.0.1.3?
+			It seems this address must be set when building the packet. So then it gets this address before any netfilter or routing.
+			Where does it get it from? The same place ip route get does??
+
+		That would require two devices with the same ip address, which isn't possible.
+		Can I use the mark flag in ping and get the expected effect?
+
+		I used -I 10.0.1.4 in ping to specify my source address and it failed. I can see in tcpdump that I have the proper source now. Strange.
+		I even see 10.0.1.2 sending some ARPs later on to discover 10.0.1.4's MAC and this device not responding.
+
+	If we put the _in sides in a separate subnet from the _out sides then does it all work?
+
+
+	Add routing rule:
+	sudo ip netns exec net1 ip route add table new 10.0.1.0/24 dev veth2_in via 10.0.1.4
+
+
+
+<h2>Other Iptables Articles</h2>
+<p>There's a lot to iptables, and as such, I'll be writing a few articles about the topic. Here's what I've written so far:</p>
+<ul>
+<li><a href="overview_of_iptables_and_netfilter.html">Overview Of Iptables And Netfilter</a>
+<li><a href="dropping_and_rejecting_packets_with_iptables.html">Dropping And Rejecting Packets With Iptables</a>
+<li>TODO
+</ul>
+</body>
+</html>

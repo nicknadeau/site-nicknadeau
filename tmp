@@ -1,0 +1,130 @@
+
+**==> results of veth1-veth2 veth pair with veth1 in ns net1, veth2 in ns net2:
+
+23:18:36.901039 veth1 92:8c:1d:d0:87:1f > ff:ff:ff:ff:ff:ff, ethertype ARP (0x0806), length 42: Ethernet (len 6), IPv4 (len 4), Request who-has 10.0.1.3 tell 10.0.1.2, length 28
+23:18:36.901044 veth2 92:8c:1d:d0:87:1f > ff:ff:ff:ff:ff:ff, ethertype ARP (0x0806), length 42: Ethernet (len 6), IPv4 (len 4), Request who-has 10.0.1.3 tell 10.0.1.2, length 28
+23:18:36.901066 veth2 ea:0d:3b:9f:6e:56 > 92:8c:1d:d0:87:1f, ethertype ARP (0x0806), length 42: Ethernet (len 6), IPv4 (len 4), Reply 10.0.1.3 is-at ea:0d:3b:9f:6e:56, length 28
+23:18:36.901067 veth1 ea:0d:3b:9f:6e:56 > 92:8c:1d:d0:87:1f, ethertype ARP (0x0806), length 42: Ethernet (len 6), IPv4 (len 4), Reply 10.0.1.3 is-at ea:0d:3b:9f:6e:56, length 28
+23:18:36.901072 veth1 92:8c:1d:d0:87:1f > ea:0d:3b:9f:6e:56, ethertype IPv4 (0x0800), length 98: (tos 0x0, ttl 64, id 9569, offset 0, flags [DF], proto ICMP (1), length 84)
+    10.0.1.2 > 10.0.1.3: ICMP echo request, id 21291, seq 1, length 64
+23:18:36.901073 veth2 92:8c:1d:d0:87:1f > ea:0d:3b:9f:6e:56, ethertype IPv4 (0x0800), length 98: (tos 0x0, ttl 64, id 9569, offset 0, flags [DF], proto ICMP (1), length 84)
+    10.0.1.2 > 10.0.1.3: ICMP echo request, id 21291, seq 1, length 64
+23:18:36.901094 veth2 ea:0d:3b:9f:6e:56 > 92:8c:1d:d0:87:1f, ethertype IPv4 (0x0800), length 98: (tos 0x0, ttl 64, id 26643, offset 0, flags [none], proto ICMP (1), length 84)
+    10.0.1.3 > 10.0.1.2: ICMP echo reply, id 21291, seq 1, length 64
+23:18:36.901095 veth1 ea:0d:3b:9f:6e:56 > 92:8c:1d:d0:87:1f, ethertype IPv4 (0x0800), length 98: (tos 0x0, ttl 64, id 26643, offset 0, flags [none], proto ICMP (1), length 84)
+    10.0.1.3 > 10.0.1.2: ICMP echo reply, id 21291, seq 1, length 64
+
+
+We see veth1 sends ARP request for 10.0.1.2 as broadcast. This hits veth2.
+Then veth2 sends a reply back with its MAC.
+
+Then we see ICMP to 10.0.1.3 from 10.0.1.2 with correct MAC from veth1 and it arrives at veth2 (request). Then reply originates at veth2 and goes to veth1.
+
+
+$ sudo ip netns exec net1 ip route show table all
+10.0.1.3 dev veth1 proto kernel scope link src 10.0.1.2 
+local 10.0.1.2 dev veth1 table local proto kernel scope host src 10.0.1.2 
+fe80::/64 dev veth1 proto kernel metric 256 pref medium
+local fe80::ecb2:fdff:fe50:f2cf dev veth1 table local proto kernel metric 0 pref medium
+multicast ff00::/8 dev veth1 table local proto kernel metric 256 pref medium
+
+$ sudo ip netns exec net2 ip route show table all
+10.0.1.2 dev veth2 proto kernel scope link src 10.0.1.3 
+local 10.0.1.3 dev veth2 table local proto kernel scope host src 10.0.1.3 
+fe80::/64 dev veth2 proto kernel metric 256 pref medium
+local fe80::440d:c4ff:fe7e:31b5 dev veth2 table local proto kernel metric 0 pref medium
+multicast ff00::/8 dev veth2 table local proto kernel metric 256 pref medium
+
+
+**==> what happens when we assign the ip addresses independently, not using the peer strategy?
+
+Our routing tables are different now:
+
+$ sudo ip netns exec net1 ip route show table all
+10.0.1.0/24 dev veth1 proto kernel scope link src 10.0.1.2 
+broadcast 10.0.1.0 dev veth1 table local proto kernel scope link src 10.0.1.2 
+local 10.0.1.2 dev veth1 table local proto kernel scope host src 10.0.1.2 
+broadcast 10.0.1.255 dev veth1 table local proto kernel scope link src 10.0.1.2 
+fe80::/64 dev veth1 proto kernel metric 256 pref medium
+local fe80::90a6:81ff:fec1:337b dev veth1 table local proto kernel metric 0 pref medium
+multicast ff00::/8 dev veth1 table local proto kernel metric 256 pref medium
+
+$ sudo ip netns exec net2 ip route show table all
+10.0.1.0/24 dev veth2 proto kernel scope link src 10.0.1.3 
+broadcast 10.0.1.0 dev veth2 table local proto kernel scope link src 10.0.1.3 
+local 10.0.1.3 dev veth2 table local proto kernel scope host src 10.0.1.3 
+broadcast 10.0.1.255 dev veth2 table local proto kernel scope link src 10.0.1.3 
+fe80::/64 dev veth2 proto kernel metric 256 pref medium
+local fe80::6cb5:44ff:fe9b:dc25 dev veth2 table local proto kernel metric 0 pref medium
+multicast ff00::/8 dev veth2 table local proto kernel metric 256 pref medium
+
+
+**==> what happens when we have veth1 and veth2 in the same namespace?
+
+routing table looks different:
+
+$ sudo ip netns exec net1 ip route show table all
+10.0.1.0/24 dev veth1 proto kernel scope link src 10.0.1.2 
+10.0.1.0/24 dev veth2 proto kernel scope link src 10.0.1.3 
+broadcast 10.0.1.0 dev veth1 table local proto kernel scope link src 10.0.1.2 
+broadcast 10.0.1.0 dev veth2 table local proto kernel scope link src 10.0.1.3 
+local 10.0.1.2 dev veth1 table local proto kernel scope host src 10.0.1.2 
+local 10.0.1.3 dev veth2 table local proto kernel scope host src 10.0.1.3 
+broadcast 10.0.1.255 dev veth1 table local proto kernel scope link src 10.0.1.2 
+broadcast 10.0.1.255 dev veth2 table local proto kernel scope link src 10.0.1.3 
+fe80::/64 dev veth2 proto kernel metric 256 pref medium
+fe80::/64 dev veth1 proto kernel metric 256 pref medium
+local fe80::1c4d:d9ff:fe2c:9989 dev veth2 table local proto kernel metric 0 pref medium
+local fe80::b8b7:fff:fea5:f8af dev veth1 table local proto kernel metric 0 pref medium
+multicast ff00::/8 dev veth2 table local proto kernel metric 256 pref medium
+multicast ff00::/8 dev veth1 table local proto kernel metric 256 pref medium
+
+route get is different:
+
+$ sudo ip netns exec net1 ip route get 10.0.1.3
+local 10.0.1.3 dev lo src 10.0.1.3 uid 0 
+    cache <local>
+
+Says to go through loopback device.
+
+ping fails. Even when specified to go through veth1.
+
+As we can see from the routing table. Since both devices are in the same subnet, they will both accept anything destined for 10.0.1.0/24and give it their own src ip.
+The local routing table, though, which gets called first, has set both 10.0.1.2 and 10.0.1.3 as local routes to go through loopback, since there must always be an entry for that.
+
+Our top 2 rules look correct. If we could get them to come first, we could be able to resolve this problem. They are in the main table.
+If we run ip rule we see the table priorities: local is 0, main is 32766.
+If we could swap this ordering, then things should work.
+
+But actually, this still doesn't work. You will notice if we run ip route get on both ip addresses we end up with:
+
+10.0.1.3 dev veth1 src 10.0.1.2 uid 0 
+    cache
+
+10.0.1.2 dev veth1 src 10.0.1.2 uid 0 
+    cache
+
+So, in both situations, packets destined for 10.0.1.2 or 10.0.1.3 are instructed to go through veth1 with src address 10.0.1.2.
+If we look at our main table we can see why:
+
+10.0.1.0/24 dev veth1 proto kernel scope link src 10.0.1.2 
+10.0.1.0/24 dev veth2 proto kernel scope link src 10.0.1.3
+
+Both devices are handling everything in that subnet, and so both are valid for these two packet destinations, but veth1 comes first and gets used both times.
+
+What we need to do then is use different subnets. If we change the ip address of veth2 to 10.0.2.2 then this should work.
+
+We can see an ARP request for 10.0.2.2 to tell their MAC to 10.0.1.2 coming out of veth1 into veth2. This happens a few times. But veth2 never responds.
+
+This is because we are on different subnets. So that doesn't make sense. This says that veth1 handles anyone who is in 10.0.1.* and veth2 handles 10.0.2.*. Hence, they have no route to each other.
+Even if we add ARP entries in manually, we will see that when veth1 sends off the 10.0.2.* packet that it already declares the host unreachable.
+
+Of course, if we said that veth1 can handle 10.0.* then we would need to allow veth2 to handle 10.0.* as well, so that the reply could come back. But that puts us back into same situation.
+
+What we clearly need, then, is for them to be on the same subnet. But we need a means of circumventing packets from always being handled by veth1 exclusively.
+
+SEE: https://serverfault.com/questions/585246/network-level-of-veth-doesnt-respond-to-arp
+
+
+
+**==> what happens when we have veth1 and veth2 in the default namespace?

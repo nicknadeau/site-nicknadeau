@@ -1,0 +1,284 @@
+nick /home/nick/Desktop/github/netns-packet-analysis master$ sudo ip netns exec net1 strace ping -I veth2_in -c1 10.0.1.2
+
+
+execve("/bin/ping", ["ping", "-I", "veth2_in", "-c1", "10.0.1.2"], 0x7ffeef961060 /* 18 vars */) = 0
+brk(NULL)                               = 0x558ecd144000
+access("/etc/ld.so.nohwcap", F_OK)      = -1 ENOENT (No such file or directory)
+access("/etc/ld.so.preload", R_OK)      = -1 ENOENT (No such file or directory)
+openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+fstat(3, {st_mode=S_IFREG|0644, st_size=102687, ...}) = 0
+mmap(NULL, 102687, PROT_READ, MAP_PRIVATE, 3, 0) = 0x7ff749f11000
+close(3)                                = 0
+access("/etc/ld.so.nohwcap", F_OK)      = -1 ENOENT (No such file or directory)
+openat(AT_FDCWD, "/lib/x86_64-linux-gnu/libcap.so.2", O_RDONLY|O_CLOEXEC) = 3
+read(3, "\177ELF\2\1\1\0\0\0\0\0\0\0\0\0\3\0>\0\1\0\0\0\20\30\0\0\0\0\0\0"..., 832) = 832
+fstat(3, {st_mode=S_IFREG|0644, st_size=22768, ...}) = 0
+mmap(NULL, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7ff749f0f000
+mmap(NULL, 2117976, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_DENYWRITE, 3, 0) = 0x7ff749afc000
+mprotect(0x7ff749b00000, 2097152, PROT_NONE) = 0
+mmap(0x7ff749d00000, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x4000) = 0x7ff749d00000
+close(3)                                = 0
+access("/etc/ld.so.nohwcap", F_OK)      = -1 ENOENT (No such file or directory)
+openat(AT_FDCWD, "/lib/x86_64-linux-gnu/libidn.so.11", O_RDONLY|O_CLOEXEC) = 3
+read(3, "\177ELF\2\1\1\0\0\0\0\0\0\0\0\0\3\0>\0\1\0\0\0\0+\0\0\0\0\0\0"..., 832) = 832
+fstat(3, {st_mode=S_IFREG|0644, st_size=206872, ...}) = 0
+mmap(NULL, 2302000, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_DENYWRITE, 3, 0) = 0x7ff7498c9000
+mprotect(0x7ff7498fb000, 2093056, PROT_NONE) = 0
+mmap(0x7ff749afa000, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x31000) = 0x7ff749afa000
+close(3)                                = 0
+access("/etc/ld.so.nohwcap", F_OK)      = -1 ENOENT (No such file or directory)
+openat(AT_FDCWD, "/usr/lib/x86_64-linux-gnu/libnettle.so.6", O_RDONLY|O_CLOEXEC) = 3
+read(3, "\177ELF\2\1\1\0\0\0\0\0\0\0\0\0\3\0>\0\1\0\0\0\20\201\0\0\0\0\0\0"..., 832) = 832
+fstat(3, {st_mode=S_IFREG|0644, st_size=219304, ...}) = 0
+mmap(NULL, 2314384, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_DENYWRITE, 3, 0) = 0x7ff749693000
+mprotect(0x7ff7496c7000, 2093056, PROT_NONE) = 0
+mmap(0x7ff7498c6000, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x33000) = 0x7ff7498c6000
+close(3)                                = 0
+access("/etc/ld.so.nohwcap", F_OK)      = -1 ENOENT (No such file or directory)
+openat(AT_FDCWD, "/lib/x86_64-linux-gnu/libresolv.so.2", O_RDONLY|O_CLOEXEC) = 3
+read(3, "\177ELF\2\1\1\0\0\0\0\0\0\0\0\0\3\0>\0\1\0\0\00008\0\0\0\0\0\0"..., 832) = 832
+fstat(3, {st_mode=S_IFREG|0644, st_size=97072, ...}) = 0
+mmap(NULL, 2202240, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_DENYWRITE, 3, 0) = 0x7ff749479000
+mprotect(0x7ff749490000, 2093056, PROT_NONE) = 0
+mmap(0x7ff74968f000, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x16000) = 0x7ff74968f000
+mmap(0x7ff749691000, 6784, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_ANONYMOUS, -1, 0) = 0x7ff749691000
+close(3)                                = 0
+access("/etc/ld.so.nohwcap", F_OK)      = -1 ENOENT (No such file or directory)
+openat(AT_FDCWD, "/lib/x86_64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+read(3, "\177ELF\2\1\1\3\0\0\0\0\0\0\0\0\3\0>\0\1\0\0\0\240\35\2\0\0\0\0\0"..., 832) = 832
+fstat(3, {st_mode=S_IFREG|0755, st_size=2030928, ...}) = 0
+mmap(NULL, 4131552, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_DENYWRITE, 3, 0) = 0x7ff749088000
+mprotect(0x7ff74926f000, 2097152, PROT_NONE) = 0
+mmap(0x7ff74946f000, 24576, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x1e7000) = 0x7ff74946f000
+mmap(0x7ff749475000, 15072, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_ANONYMOUS, -1, 0) = 0x7ff749475000
+close(3)                                = 0
+mmap(NULL, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7ff749f0d000
+arch_prctl(ARCH_SET_FS, 0x7ff749f0df00) = 0
+mprotect(0x7ff74946f000, 16384, PROT_READ) = 0
+mprotect(0x7ff74968f000, 4096, PROT_READ) = 0
+mprotect(0x7ff7498c6000, 8192, PROT_READ) = 0
+mprotect(0x7ff749afa000, 4096, PROT_READ) = 0
+mprotect(0x7ff749d00000, 4096, PROT_READ) = 0
+mprotect(0x558ecc17e000, 4096, PROT_READ) = 0
+mprotect(0x7ff749f2b000, 4096, PROT_READ) = 0
+munmap(0x7ff749f11000, 102687)          = 0
+brk(NULL)                               = 0x558ecd144000
+brk(0x558ecd165000)                     = 0x558ecd165000
+
+capget({version=_LINUX_CAPABILITY_VERSION_3, pid=0}, NULL) = 0
+capget({version=_LINUX_CAPABILITY_VERSION_3, pid=0}, {effective=1<<CAP_CHOWN|1<<CAP_DAC_OVERRIDE|1<<CAP_DAC_READ_SEARCH|1<<CAP_FOWNER|1<<CAP_FSETID|1<<CAP_KILL|1<<CAP_SETGID|1<<CAP_SETUID|1<<CAP_SETPCAP|1<<CAP_LINUX_IMMUTABLE|1<<CAP_NET_BIND_SERVICE|1<<CAP_NET_BROADCAST|1<<CAP_NET_ADMIN|1<<CAP_NET_RAW|1<<CAP_IPC_LOCK|1<<CAP_IPC_OWNER|1<<CAP_SYS_MODULE|1<<CAP_SYS_RAWIO|1<<CAP_SYS_CHROOT|1<<CAP_SYS_PTRACE|1<<CAP_SYS_PACCT|1<<CAP_SYS_ADMIN|1<<CAP_SYS_BOOT|1<<CAP_SYS_NICE|1<<CAP_SYS_RESOURCE|1<<CAP_SYS_TIME|1<<CAP_SYS_TTY_CONFIG|1<<CAP_MKNOD|1<<CAP_LEASE|1<<CAP_AUDIT_WRITE|1<<CAP_AUDIT_CONTROL|1<<CAP_SETFCAP|1<<CAP_MAC_OVERRIDE|1<<CAP_MAC_ADMIN|1<<CAP_SYSLOG|1<<CAP_WAKE_ALARM|1<<CAP_BLOCK_SUSPEND|1<<CAP_AUDIT_READ, permitted=1<<CAP_CHOWN|1<<CAP_DAC_OVERRIDE|1<<CAP_DAC_READ_SEARCH|1<<CAP_FOWNER|1<<CAP_FSETID|1<<CAP_KILL|1<<CAP_SETGID|1<<CAP_SETUID|1<<CAP_SETPCAP|1<<CAP_LINUX_IMMUTABLE|1<<CAP_NET_BIND_SERVICE|1<<CAP_NET_BROADCAST|1<<CAP_NET_ADMIN|1<<CAP_NET_RAW|1<<CAP_IPC_LOCK|1<<CAP_IPC_OWNER|1<<CAP_SYS_MODULE|1<<CAP_SYS_RAWIO|1<<CAP_SYS_CHROOT|1<<CAP_SYS_PTRACE|1<<CAP_SYS_PACCT|1<<CAP_SYS_ADMIN|1<<CAP_SYS_BOOT|1<<CAP_SYS_NICE|1<<CAP_SYS_RESOURCE|1<<CAP_SYS_TIME|1<<CAP_SYS_TTY_CONFIG|1<<CAP_MKNOD|1<<CAP_LEASE|1<<CAP_AUDIT_WRITE|1<<CAP_AUDIT_CONTROL|1<<CAP_SETFCAP|1<<CAP_MAC_OVERRIDE|1<<CAP_MAC_ADMIN|1<<CAP_SYSLOG|1<<CAP_WAKE_ALARM|1<<CAP_BLOCK_SUSPEND|1<<CAP_AUDIT_READ, inheritable=0}) = 0
+capget({version=_LINUX_CAPABILITY_VERSION_3, pid=0}, NULL) = 0
+capset({version=_LINUX_CAPABILITY_VERSION_3, pid=0}, {effective=0, permitted=1<<CAP_NET_ADMIN|1<<CAP_NET_RAW, inheritable=0}) = 0
+prctl(PR_SET_KEEPCAPS, 1)               = 0
+getuid()                                = 0
+setuid(0)                               = 0
+prctl(PR_SET_KEEPCAPS, 0)               = 0
+getuid()                                = 0
+geteuid()                               = 0
+openat(AT_FDCWD, "/usr/lib/locale/locale-archive", O_RDONLY|O_CLOEXEC) = 3
+fstat(3, {st_mode=S_IFREG|0644, st_size=3004224, ...}) = 0
+mmap(NULL, 3004224, PROT_READ, MAP_PRIVATE, 3, 0) = 0x7ff748daa000
+close(3)                                = 0
+capget({version=_LINUX_CAPABILITY_VERSION_3, pid=0}, NULL) = 0
+capget({version=_LINUX_CAPABILITY_VERSION_3, pid=0}, {effective=0, permitted=1<<CAP_NET_ADMIN|1<<CAP_NET_RAW, inheritable=0}) = 0
+capset({version=_LINUX_CAPABILITY_VERSION_3, pid=0}, {effective=1<<CAP_NET_RAW, permitted=1<<CAP_NET_ADMIN|1<<CAP_NET_RAW, inheritable=0}) = 0
+socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP) = -1 EACCES (Permission denied)
+
+
+
+
+
+	A raw socket is opened for IPv4 using the ICMP protocol. Socket descriptor is 3. Fd 4 is opened for IPv6.
+
+socket(AF_INET, SOCK_RAW, IPPROTO_ICMP) = 3
+socket(AF_INET6, SOCK_DGRAM, IPPROTO_ICMPV6) = -1 EACCES (Permission denied)
+socket(AF_INET6, SOCK_RAW, IPPROTO_ICMPV6) = 4
+capget({version=_LINUX_CAPABILITY_VERSION_3, pid=0}, NULL) = 0
+capget({version=_LINUX_CAPABILITY_VERSION_3, pid=0}, {effective=1<<CAP_NET_RAW, permitted=1<<CAP_NET_ADMIN|1<<CAP_NET_RAW, inheritable=0}) = 0
+capset({version=_LINUX_CAPABILITY_VERSION_3, pid=0}, {effective=0, permitted=1<<CAP_NET_ADMIN|1<<CAP_NET_RAW, inheritable=0}) = 0
+
+	A datagram socket is opened for IPv4 using the IP protocol as fd 5.
+
+socket(AF_INET, SOCK_DGRAM, IPPROTO_IP) = 5
+capget({version=_LINUX_CAPABILITY_VERSION_3, pid=0}, NULL) = 0
+capget({version=_LINUX_CAPABILITY_VERSION_3, pid=0}, {effective=0, permitted=1<<CAP_NET_ADMIN|1<<CAP_NET_RAW, inheritable=0}) = 0
+capset({version=_LINUX_CAPABILITY_VERSION_3, pid=0}, {effective=1<<CAP_NET_RAW, permitted=1<<CAP_NET_ADMIN|1<<CAP_NET_RAW, inheritable=0}) = 0
+
+
+	The datagram IP protocol socket option is set, for socket-level options (SOL_SOCKET), and the option is to bind the protocol to the device "veth2_in".
+	NOTE: only packets received by this interface will be processed by this socket!
+
+setsockopt(5, SOL_SOCKET, SO_BINDTODEVICE, "veth2_in\0", 9) = 0
+capget({version=_LINUX_CAPABILITY_VERSION_3, pid=0}, NULL) = 0
+capget({version=_LINUX_CAPABILITY_VERSION_3, pid=0}, {effective=1<<CAP_NET_RAW, permitted=1<<CAP_NET_ADMIN|1<<CAP_NET_RAW, inheritable=0}) = 0
+capset({version=_LINUX_CAPABILITY_VERSION_3, pid=0}, {effective=0, permitted=1<<CAP_NET_ADMIN|1<<CAP_NET_RAW, inheritable=0}) = 0
+capget({version=_LINUX_CAPABILITY_VERSION_3, pid=0}, NULL) = 0
+capget({version=_LINUX_CAPABILITY_VERSION_3, pid=0}, {effective=0, permitted=1<<CAP_NET_ADMIN|1<<CAP_NET_RAW, inheritable=0}) = 0
+capset({version=_LINUX_CAPABILITY_VERSION_3, pid=0}, {effective=1<<CAP_NET_RAW, permitted=1<<CAP_NET_ADMIN|1<<CAP_NET_RAW, inheritable=0}) = 0
+
+	The raw socket ICMP protocol socket is bound to device "veth2_in".
+
+setsockopt(3, SOL_SOCKET, SO_BINDTODEVICE, "veth2_in\0", 9) = 0
+capget({version=_LINUX_CAPABILITY_VERSION_3, pid=0}, NULL) = 0
+capget({version=_LINUX_CAPABILITY_VERSION_3, pid=0}, {effective=1<<CAP_NET_RAW, permitted=1<<CAP_NET_ADMIN|1<<CAP_NET_RAW, inheritable=0}) = 0
+capset({version=_LINUX_CAPABILITY_VERSION_3, pid=0}, {effective=0, permitted=1<<CAP_NET_ADMIN|1<<CAP_NET_RAW, inheritable=0}) = 0
+
+	Connect the datagram IP socket to ip 10.0.1.2 and port 1025
+
+connect(5, {sa_family=AF_INET, sin_port=htons(1025), sin_addr=inet_addr("10.0.1.2")}, 16) = 0
+
+	Gets the name of the datagram IP socket -- it is an IPv4 socket with ip 10.0.1.4 and port 43494
+
+getsockname(5, {sa_family=AF_INET, sin_port=htons(43494), sin_addr=inet_addr("10.0.1.4")}, [16]) = 0
+
+	Establish a raw socket with the kernel. The AF_NETLINK socket type allows for userspace to communicate with the kernel via a socket API.
+	The NETLINK_ROUTE specifies that this communication is for receiving routing and link updates.
+	This routing communication socket is fd 6.
+
+socket(AF_NETLINK, SOCK_RAW|SOCK_CLOEXEC, NETLINK_ROUTE) = 6
+
+	Bind the kernel netlink socket. The pid here is zero, indicating this is a bind to a kernel-space netlink destination. The groups is zero, so nomulticast messages will be received.
+
+bind(6, {sa_family=AF_NETLINK, nl_pid=0, nl_groups=00000000}, 12) = 0
+
+	Gets the name of the netlink socket -- it is a netlink socket with PID 26591 (this is the ping process' PID).
+
+getsockname(6, {sa_family=AF_NETLINK, nl_pid=26591, nl_groups=00000000}, [12]) = 0
+
+	Send a message over the netlink socket to the kernel. The message type is RTM_GETLINK, for retrieving link configuration and statistics. This is going to the kernel, PID 0. 
+
+sendto(6, {{len=20, type=RTM_GETLINK, flags=NLM_F_REQUEST|NLM_F_DUMP, seq=1662862491, pid=0}, {ifi_family=AF_UNSPEC, ...}}, 20, 0, {sa_family=AF_NETLINK, nl_pid=0, nl_groups=00000000}, 12) = 20
+
+	Receive a message over the netlink socket. This seems to be handing back information about the links.
+	This first message seems to only mention the loopback device and veth1_in. It gives a whole bunch of information about these interfaces.
+
+recvmsg(6, {msg_name={sa_family=AF_NETLINK, nl_pid=0, nl_groups=00000000}, msg_namelen=12, msg_iov=[{iov_base=[{{len=1316, type=RTM_NEWLINK, flags=NLM_F_MULTI, seq=1662862491, pid=26591}, {ifi_family=AF_UNSPEC, ifi_type=ARPHRD_LOOPBACK, ifi_index=if_nametoindex("lo"), ifi_flags=IFF_LOOPBACK, ifi_change=0}, [{{nla_len=7, nla_type=IFLA_IFNAME}, "lo"}, {{nla_len=8, nla_type=IFLA_TXQLEN}, 1000}, {{nla_len=5, nla_type=IFLA_OPERSTATE}, 2}, {{nla_len=5, nla_type=IFLA_LINKMODE}, 0}, {{nla_len=8, nla_type=IFLA_MTU}, 65536}, {{nla_len=8, nla_type=0x32 /* IFLA_??? */}, "\x00\x00\x00\x00"}, {{nla_len=8, nla_type=0x33 /* IFLA_??? */}, "\x00\x00\x00\x00"}, {{nla_len=8, nla_type=IFLA_GROUP}, 0}, {{nla_len=8, nla_type=IFLA_PROMISCUITY}, 0}, {{nla_len=8, nla_type=IFLA_NUM_TX_QUEUES}, 1}, {{nla_len=8, nla_type=IFLA_GSO_MAX_SEGS}, 65535}, {{nla_len=8, nla_type=IFLA_GSO_MAX_SIZE}, 65536}, {{nla_len=8, nla_type=IFLA_NUM_RX_QUEUES}, 1}, {{nla_len=5, nla_type=IFLA_CARRIER}, 1}, {{nla_len=9, nla_type=IFLA_QDISC}, "noop"}, {{nla_len=8, nla_type=IFLA_CARRIER_CHANGES}, 0}, {{nla_len=5, nla_type=IFLA_PROTO_DOWN}, 0}, {{nla_len=8, nla_type=0x2f /* IFLA_??? */}, "\x00\x00\x00\x00"}, {{nla_len=8, nla_type=0x30 /* IFLA_??? */}, "\x00\x00\x00\x00"}, {{nla_len=36, nla_type=IFLA_MAP}, {mem_start=0, mem_end=0, base_addr=0, irq=0, dma=0, port=0}}, {{nla_len=10, nla_type=IFLA_ADDRESS}, "\x00\x00\x00\x00\x00\x00"}, {{nla_len=10, nla_type=IFLA_BROADCAST}, "\x00\x00\x00\x00\x00\x00"}, {{nla_len=196, nla_type=IFLA_STATS64}, {rx_packets=0, tx_packets=0, rx_bytes=0, tx_bytes=0, rx_errors=0, tx_errors=0, rx_dropped=0, tx_dropped=0, multicast=0, collisions=0, rx_length_errors=0, rx_over_errors=0, rx_crc_errors=0, rx_frame_errors=0, rx_fifo_errors=0, rx_missed_errors=0, tx_aborted_errors=0, tx_carrier_errors=0, tx_fifo_errors=0, tx_heartbeat_errors=0, tx_window_errors=0, rx_compressed=0, tx_compressed=0, rx_nohandler=0}}, {{nla_len=100, nla_type=IFLA_STATS}, {rx_packets=0, tx_packets=0, rx_bytes=0, tx_bytes=0, rx_errors=0, tx_errors=0, rx_dropped=0, tx_dropped=0, multicast=0, collisions=0, rx_length_errors=0, rx_over_errors=0, rx_crc_errors=0, rx_frame_errors=0, rx_fifo_errors=0, rx_missed_errors=0, tx_aborted_errors=0, tx_carrier_errors=0, tx_fifo_errors=0, tx_heartbeat_errors=0, tx_window_errors=0, rx_compressed=0, tx_compressed=0, rx_nohandler=0}}, {{nla_len=12, nla_type=IFLA_XDP}, {{nla_len=5, nla_type=IFLA_XDP_ATTACHED}, 0}}, {{nla_len=760, nla_type=IFLA_AF_SPEC}, "\x88\x00\x02\x00\x84\x00\x01\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x01\x00\x00\x00\x01\x00\x00\x00"...}]}, {{len=1356, type=RTM_NEWLINK, flags=NLM_F_MULTI, seq=1662862491, pid=26591}, {ifi_family=AF_UNSPEC, ifi_type=ARPHRD_ETHER, ifi_index=if_nametoindex("veth1_in"), ifi_flags=IFF_UP|IFF_BROADCAST|IFF_RUNNING|IFF_PROMISC|IFF_MULTICAST|0x10000, ifi_change=0}, [{{nla_len=13, nla_type=IFLA_IFNAME}, "veth1_in"}, {{nla_len=8, nla_type=IFLA_TXQLEN}, 1000}, {{nla_len=5, nla_type=IFLA_OPERSTATE}, 6}, {{nla_len=5, nla_type=IFLA_LINKMODE}, 0}, {{nla_len=8, nla_type=IFLA_MTU}, 1500}, {{nla_len=8, nla_type=0x32 /* IFLA_??? */}, "\x44\x00\x00\x00"}, {{nla_len=8, nla_type=0x33 /* IFLA_??? */}, "\xff\xff\x00\x00"}, {{nla_len=8, nla_type=IFLA_GROUP}, 0}, {{nla_len=8, nla_type=IFLA_PROMISCUITY}, 1}, {{nla_len=8, nla_type=IFLA_NUM_TX_QUEUES}, 1}, {{nla_len=8, nla_type=IFLA_GSO_MAX_SEGS}, 65535}, {{nla_len=8, nla_type=IFLA_GSO_MAX_SIZE}, 65536}, {{nla_len=8, nla_type=IFLA_NUM_RX_QUEUES}, 1}, {{nla_len=5, nla_type=IFLA_CARRIER}, 1}, {{nla_len=12, nla_type=IFLA_QDISC}, "noqueue"}, {{nla_len=8, nla_type=IFLA_CARRIER_CHANGES}, 26}, {{nla_len=5, nla_type=IFLA_PROTO_DOWN}, 0}, {{nla_len=8, nla_type=0x2f /* IFLA_??? */}, "\x0d\x00\x00\x00"}, {{nla_len=8, nla_type=0x30 /* IFLA_??? */}, "\x0d\x00\x00\x00"}, {{nla_len=36, nla_type=IFLA_MAP}, {mem_start=0, mem_end=0, base_addr=0, irq=0, dma=0, port=0}}, {{nla_len=10, nla_type=IFLA_ADDRESS}, "\x36\xef\x39\xe1\x6f\x3c"}, {{nla_len=10, nla_type=IFLA_BROADCAST}, "\xff\xff\xff\xff\xff\xff"}, {{nla_len=196, nla_type=IFLA_STATS64}, {rx_packets=173, tx_packets=169, rx_bytes=13190, tx_bytes=12966, rx_errors=0, tx_errors=0, rx_dropped=0, tx_dropped=0, multicast=0, collisions=0, rx_length_errors=0, rx_over_errors=0, rx_crc_errors=0, rx_frame_errors=0, rx_fifo_errors=0, rx_missed_errors=0, tx_aborted_errors=0, tx_carrier_errors=0, tx_fifo_errors=0, tx_heartbeat_errors=0, tx_window_errors=0, rx_compressed=0, tx_compressed=0, rx_nohandler=0}}, {{nla_len=100, nla_type=IFLA_STATS}, {rx_packets=173, tx_packets=169, rx_bytes=13190, tx_bytes=12966, rx_errors=0, tx_errors=0, rx_dropped=0, tx_dropped=0, multicast=0, collisions=0, rx_length_errors=0, rx_over_errors=0, rx_crc_errors=0, rx_frame_errors=0, rx_fifo_errors=0, rx_missed_errors=0, tx_aborted_errors=0, tx_carrier_errors=0, tx_fifo_errors=0, tx_heartbeat_errors=0, tx_window_errors=0, rx_compressed=0, tx_compressed=0, rx_nohandler=0}}, {{nla_len=12, nla_type=IFLA_XDP}, {{nla_len=5, nla_type=IFLA_XDP_ATTACHED}, 0}}, {{nla_len=16, nla_type=IFLA_LINKINFO}, {{nla_len=9, nla_type=IFLA_INFO_KIND}, "veth"}}, {{nla_len=8, nla_type=IFLA_LINK_NETNSID}, 1}, {{nla_len=8, nla_type=IFLA_LINK}, 216}, {{nla_len=760, nla_type=IFLA_AF_SPEC}, "\x88\x00\x02\x00\x84\x00\x01\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x01\x00\x00\x00\x01\x00\x00\x00"...}]}], iov_len=4096}], msg_iovlen=1, msg_controllen=0, msg_flags=0}, 0) = 2672
+
+	Receive another netlink socket message.
+	This just seems to be the continuation of the prior message. It contains the veth2_in interface information.
+
+recvmsg(6, {msg_name={sa_family=AF_NETLINK, nl_pid=0, nl_groups=00000000}, msg_namelen=12, msg_iov=[{iov_base={{len=1356, type=RTM_NEWLINK, flags=NLM_F_MULTI, seq=1662862491, pid=26591}, {ifi_family=AF_UNSPEC, ifi_type=ARPHRD_ETHER, ifi_index=if_nametoindex("veth2_in"), ifi_flags=IFF_UP|IFF_BROADCAST|IFF_RUNNING|IFF_PROMISC|IFF_MULTICAST|0x10000, ifi_change=0}, [{{nla_len=13, nla_type=IFLA_IFNAME}, "veth2_in"}, {{nla_len=8, nla_type=IFLA_TXQLEN}, 1000}, {{nla_len=5, nla_type=IFLA_OPERSTATE}, 6}, {{nla_len=5, nla_type=IFLA_LINKMODE}, 0}, {{nla_len=8, nla_type=IFLA_MTU}, 1500}, {{nla_len=8, nla_type=0x32 /* IFLA_??? */}, "\x44\x00\x00\x00"}, {{nla_len=8, nla_type=0x33 /* IFLA_??? */}, "\xff\xff\x00\x00"}, {{nla_len=8, nla_type=IFLA_GROUP}, 0}, {{nla_len=8, nla_type=IFLA_PROMISCUITY}, 1}, {{nla_len=8, nla_type=IFLA_NUM_TX_QUEUES}, 1}, {{nla_len=8, nla_type=IFLA_GSO_MAX_SEGS}, 65535}, {{nla_len=8, nla_type=IFLA_GSO_MAX_SIZE}, 65536}, {{nla_len=8, nla_type=IFLA_NUM_RX_QUEUES}, 1}, {{nla_len=5, nla_type=IFLA_CARRIER}, 1}, {{nla_len=12, nla_type=IFLA_QDISC}, "noqueue"}, {{nla_len=8, nla_type=IFLA_CARRIER_CHANGES}, 26}, {{nla_len=5, nla_type=IFLA_PROTO_DOWN}, 0}, {{nla_len=8, nla_type=0x2f /* IFLA_??? */}, "\x0d\x00\x00\x00"}, {{nla_len=8, nla_type=0x30 /* IFLA_??? */}, "\x0d\x00\x00\x00"}, {{nla_len=36, nla_type=IFLA_MAP}, {mem_start=0, mem_end=0, base_addr=0, irq=0, dma=0, port=0}}, {{nla_len=10, nla_type=IFLA_ADDRESS}, "\x7e\xc1\xb7\xb0\xfc\x78"}, {{nla_len=10, nla_type=IFLA_BROADCAST}, "\xff\xff\xff\xff\xff\xff"}, {{nla_len=196, nla_type=IFLA_STATS64}, {rx_packets=182, tx_packets=151, rx_bytes=13036, tx_bytes=11846, rx_errors=0, tx_errors=0, rx_dropped=0, tx_dropped=0, multicast=0, collisions=0, rx_length_errors=0, rx_over_errors=0, rx_crc_errors=0, rx_frame_errors=0, rx_fifo_errors=0, rx_missed_errors=0, tx_aborted_errors=0, tx_carrier_errors=0, tx_fifo_errors=0, tx_heartbeat_errors=0, tx_window_errors=0, rx_compressed=0, tx_compressed=0, rx_nohandler=0}}, {{nla_len=100, nla_type=IFLA_STATS}, {rx_packets=182, tx_packets=151, rx_bytes=13036, tx_bytes=11846, rx_errors=0, tx_errors=0, rx_dropped=0, tx_dropped=0, multicast=0, collisions=0, rx_length_errors=0, rx_over_errors=0, rx_crc_errors=0, rx_frame_errors=0, rx_fifo_errors=0, rx_missed_errors=0, tx_aborted_errors=0, tx_carrier_errors=0, tx_fifo_errors=0, tx_heartbeat_errors=0, tx_window_errors=0, rx_compressed=0, tx_compressed=0, rx_nohandler=0}}, {{nla_len=12, nla_type=IFLA_XDP}, {{nla_len=5, nla_type=IFLA_XDP_ATTACHED}, 0}}, {{nla_len=16, nla_type=IFLA_LINKINFO}, {{nla_len=9, nla_type=IFLA_INFO_KIND}, "veth"}}, {{nla_len=8, nla_type=IFLA_LINK_NETNSID}, 2}, {{nla_len=8, nla_type=IFLA_LINK}, 218}, {{nla_len=760, nla_type=IFLA_AF_SPEC}, "\x88\x00\x02\x00\x84\x00\x01\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x01\x00\x00\x00\x01\x00\x00\x00"...}]}, iov_len=4096}], msg_iovlen=1, msg_controllen=0, msg_flags=0}, 0) = 1356
+
+	Receive another netlink socket message.
+	This has a NLMSG_DONE flag in it, and I am assuming that signals the end of this 3-message response.
+
+recvmsg(6, {msg_name={sa_family=AF_NETLINK, nl_pid=0, nl_groups=00000000}, msg_namelen=12, msg_iov=[{iov_base={{len=20, type=NLMSG_DONE, flags=NLM_F_MULTI, seq=1662862491, pid=26591}, 0}, iov_len=4096}], msg_iovlen=1, msg_controllen=0, msg_flags=0}, 0) = 20
+
+	Send a message over netlink to the kernel. This message type is RTM_GETADDR, which, if I had to guess, is requesting the ip address of an interface.
+	No interface in particular appears to be specified here.
+
+sendto(6, {{len=20, type=RTM_GETADDR, flags=NLM_F_REQUEST|NLM_F_DUMP, seq=1662862492, pid=0}, {ifa_family=AF_UNSPEC, ...}}, 20, 0, {sa_family=AF_NETLINK, nl_pid=0, nl_groups=00000000}, 12) = 20
+
+
+	Receive the netlink response. This contains the IPv4 addresses of veth1_in and veth2_in. They are reported as 10.0.1.3 and 10.0.1.4, correctly. The link 'preferred' values are present too.
+
+recvmsg(6, {msg_name={sa_family=AF_NETLINK, nl_pid=0, nl_groups=00000000}, msg_namelen=12, msg_iov=[{iov_base=[{{len=84, type=RTM_NEWADDR, flags=NLM_F_MULTI, seq=1662862492, pid=26591}, {ifa_family=AF_INET, ifa_prefixlen=24, ifa_flags=IFA_F_PERMANENT, ifa_scope=RT_SCOPE_UNIVERSE, ifa_index=if_nametoindex("veth1_in")}, [{{nla_len=8, nla_type=IFA_ADDRESS}, 10.0.1.3}, {{nla_len=8, nla_type=IFA_LOCAL}, 10.0.1.3}, {{nla_len=13, nla_type=IFA_LABEL}, "veth1_in"}, {{nla_len=8, nla_type=IFA_FLAGS}, IFA_F_PERMANENT}, {{nla_len=20, nla_type=IFA_CACHEINFO}, {ifa_prefered=4294967295, ifa_valid=4294967295, cstamp=15242818, tstamp=15242818}}]}, {{len=84, type=RTM_NEWADDR, flags=NLM_F_MULTI, seq=1662862492, pid=26591}, {ifa_family=AF_INET, ifa_prefixlen=24, ifa_flags=IFA_F_PERMANENT, ifa_scope=RT_SCOPE_UNIVERSE, ifa_index=if_nametoindex("veth2_in")}, [{{nla_len=8, nla_type=IFA_ADDRESS}, 10.0.1.4}, {{nla_len=8, nla_type=IFA_LOCAL}, 10.0.1.4}, {{nla_len=13, nla_type=IFA_LABEL}, "veth2_in"}, {{nla_len=8, nla_type=IFA_FLAGS}, IFA_F_PERMANENT}, {{nla_len=20, nla_type=IFA_CACHEINFO}, {ifa_prefered=4294967295, ifa_valid=4294967295, cstamp=15243312, tstamp=15243312}}]}], iov_len=4096}], msg_iovlen=1, msg_controllen=0, msg_flags=0}, 0) = 168
+
+	This netlink response contains the IPv6 addresses of veth1_in and veth2_in.
+
+recvmsg(6, {msg_name={sa_family=AF_NETLINK, nl_pid=0, nl_groups=00000000}, msg_namelen=12, msg_iov=[{iov_base=[{{len=72, type=RTM_NEWADDR, flags=NLM_F_MULTI, seq=1662862492, pid=26591}, {ifa_family=AF_INET6, ifa_prefixlen=64, ifa_flags=IFA_F_PERMANENT, ifa_scope=RT_SCOPE_LINK, ifa_index=if_nametoindex("veth1_in")}, [{{nla_len=20, nla_type=IFA_ADDRESS}, fe80::34ef:39ff:fee1:6f3c}, {{nla_len=20, nla_type=IFA_CACHEINFO}, {ifa_prefered=4294967295, ifa_valid=4294967295, cstamp=16694628, tstamp=16694628}}, {{nla_len=8, nla_type=IFA_FLAGS}, IFA_F_PERMANENT}]}, {{len=72, type=RTM_NEWADDR, flags=NLM_F_MULTI, seq=1662862492, pid=26591}, {ifa_family=AF_INET6, ifa_prefixlen=64, ifa_flags=IFA_F_PERMANENT, ifa_scope=RT_SCOPE_LINK, ifa_index=if_nametoindex("veth2_in")}, [{{nla_len=20, nla_type=IFA_ADDRESS}, fe80::7cc1:b7ff:feb0:fc78}, {{nla_len=20, nla_type=IFA_CACHEINFO}, {ifa_prefered=4294967295, ifa_valid=4294967295, cstamp=16694630, tstamp=16694630}}, {{nla_len=8, nla_type=IFA_FLAGS}, IFA_F_PERMANENT}]}], iov_len=4096}], msg_iovlen=1, msg_controllen=0, msg_flags=0}, 0) = 144
+
+	Message done.
+
+recvmsg(6, {msg_name={sa_family=AF_NETLINK, nl_pid=0, nl_groups=00000000}, msg_namelen=12, msg_iov=[{iov_base={{len=20, type=NLMSG_DONE, flags=NLM_F_MULTI, seq=1662862492, pid=26591}, 0}, iov_len=4096}], msg_iovlen=1, msg_controllen=0, msg_flags=0}, 0) = 20
+
+	The kernel netlink socket is closed, and so is the datagram IP protocol socket.
+
+close(6)                                = 0
+close(5)                                = 0
+
+	Issue an ioctl to the raw ICMP protocol socket. This is a call to get the interface index of the "veth2_in" interface. We can't see the response, it is written back into memory I believe.
+
+ioctl(3, SIOCGIFINDEX, {ifr_name="veth2_in", }) = 0
+
+	Socket options are now set on the raw ICMP protocol socket.
+	Since raw sockets receive all raw packets, the ICMP_FILTER will filter those packets out. This is basically saying it only wants to receive ICMP reply, unreach, quench, redirect, exceed, param packets.
+
+setsockopt(3, SOL_RAW, ICMP_FILTER, ~(1<<ICMP_ECHOREPLY|1<<ICMP_DEST_UNREACH|1<<ICMP_SOURCE_QUENCH|1<<ICMP_REDIRECT|1<<ICMP_TIME_EXCEEDED|1<<ICMP_PARAMETERPROB), 4) = 0
+
+	Set the socket option on the raw ICMP protocol socket for reliable error message passing. All generated errors will be queued in an error queue so they can later be fetched.
+
+setsockopt(3, SOL_IP, IP_RECVERR, [1], 4) = 0
+
+	Sets the maximum socket send buffer for the raw ICMP protocol socket.
+
+setsockopt(3, SOL_SOCKET, SO_SNDBUF, [324], 4) = 0
+
+	Sets the maximum socket receive buffer for the raw ICMP protocol socket.
+
+setsockopt(3, SOL_SOCKET, SO_RCVBUF, [65536], 4) = 0
+getsockopt(3, SOL_SOCKET, SO_RCVBUF, [131072], [4]) = 0
+
+	Run an fstat on stdout to ensure it is working, and then write the PING message to stdout.
+
+fstat(1, {st_mode=S_IFCHR|0620, st_rdev=makedev(136, 2), ...}) = 0
+write(1, "PING 10.0.1.2 (10.0.1.2) from 10"..., 71PING 10.0.1.2 (10.0.1.2) from 10.0.1.4 veth2_in: 56(84) bytes of data.
+) = 71
+
+	Set the socket option to enable receiving the timestamp control message for the raw ICMP protocol socket.
+
+setsockopt(3, SOL_SOCKET, SO_TIMESTAMP, [1], 4) = 0
+
+	Specify the receiving and sending timeout values until reporting an error for the raw ICMP protocol socket.
+
+setsockopt(3, SOL_SOCKET, SO_SNDTIMEO, "\1\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", 16) = 0
+setsockopt(3, SOL_SOCKET, SO_RCVTIMEO, "\1\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", 16) = 0
+
+	Get this ping process' PID. It is 26591.
+
+getpid()                                = 26591
+
+	Set some signal handlers for SIGINT, SIGALRM, SIGQUIT.
+
+rt_sigaction(SIGINT, {sa_handler=0x558ecbf76680, sa_mask=[], sa_flags=SA_RESTORER|SA_INTERRUPT, sa_restorer=0x7ff7490c6f10}, NULL, 8) = 0
+rt_sigaction(SIGALRM, {sa_handler=0x558ecbf76680, sa_mask=[], sa_flags=SA_RESTORER|SA_INTERRUPT, sa_restorer=0x7ff7490c6f10}, NULL, 8) = 0
+rt_sigaction(SIGQUIT, {sa_handler=0x558ecbf76670, sa_mask=[], sa_flags=SA_RESTORER|SA_INTERRUPT, sa_restorer=0x7ff7490c6f10}, NULL, 8) = 0
+
+	Make the set of blocked signals the empty set.
+
+rt_sigprocmask(SIG_SETMASK, [], NULL, 8) = 0
+
+	Get the current serial port settings for stdout.
+
+ioctl(1, TCGETS, {B38400 opost isig icanon echo ...}) = 0
+
+	Get the current window size of stdout.
+
+ioctl(1, TIOCGWINSZ, {ws_row=51, ws_col=211, ws_xpixel=0, ws_ypixel=0}) = 0
+
+	Send a message through the raw ICMP protocol socket. This is 64 bytes. This is probably the ping request.
+
+sendto(3, "\10\0\261\177g\337\0\1\233D\35c\0\0\0\0b%\5\0\0\0\0\0\20\21\22\23\24\25\26\27"..., 64, 0, {sa_family=AF_INET, sin_port=htons(0), sin_addr=inet_addr("10.0.1.2")}, 16) = 64
+
+	Set an interval timer for 10 seconds.
+
+setitimer(ITIMER_REAL, {it_interval={tv_sec=0, tv_usec=0}, it_value={tv_sec=10, tv_usec=0}}, NULL) = 0
+
+	Attempt to receive a message from the raw ICMP protocol socket. In fact, attempt 10 times. One per second.
+	Each time we get EAGAIN error. This is because the socket is non-blocking and it has no data to consume.
+
+recvmsg(3, {msg_namelen=128}, 0)        = -1 EAGAIN (Resource temporarily unavailable)
+recvmsg(3, {msg_namelen=128}, 0)        = -1 EAGAIN (Resource temporarily unavailable)
+recvmsg(3, {msg_namelen=128}, 0)        = -1 EAGAIN (Resource temporarily unavailable)
+recvmsg(3, {msg_namelen=128}, 0)        = -1 EAGAIN (Resource temporarily unavailable)
+recvmsg(3, {msg_namelen=128}, 0)        = -1 EAGAIN (Resource temporarily unavailable)
+recvmsg(3, {msg_namelen=128}, 0)        = -1 EAGAIN (Resource temporarily unavailable)
+recvmsg(3, {msg_namelen=128}, 0)        = -1 EAGAIN (Resource temporarily unavailable)
+recvmsg(3, {msg_namelen=128}, 0)        = -1 EAGAIN (Resource temporarily unavailable)
+recvmsg(3, {msg_namelen=128}, 0)        = -1 EAGAIN (Resource temporarily unavailable)
+recvmsg(3, {msg_namelen=128}, 0)        = -1 EINTR (Interrupted system call)
+
+	Catch the SIGALRM signal generated by the interval timer and write our failed results to stdout.
+
+--- SIGALRM {si_signo=SIGALRM, si_code=SI_KERNEL} ---
+rt_sigreturn({mask=[]})                 = -1 EINTR (Interrupted system call)
+write(1, "\n", 1
+)                       = 1
+write(1, "--- 10.0.1.2 ping statistics ---"..., 33--- 10.0.1.2 ping statistics ---
+) = 33
+write(1, "1 packets transmitted, 0 receive"..., 621 packets transmitted, 0 received, 100% packet loss, time 0ms
+) = 62
+write(1, "\n", 1
+)                       = 1
+exit_group(1)                           = ?
++++ exited with 1 +++

@@ -1,0 +1,244 @@
+IPTABLES
+
+see: https://www.digitalocean.com/community/tutorials/a-deep-dive-into-iptables-and-netfilter-architecture
+
+There are 5 tables:
+	filter: The default table. Contains INPUT, FORWARD, OUTPUT chains for basic routing.
+	nat: Consulted when a packet that creates a new connection is encountered. Contains the chains - PREROUTING (alter packet as soon as it arrives), INPUT (alter packets destined for local sockets), OUTPUT (alter locally-generated packet before routing), POSTROUTING (alter packet as it is about to go out).
+	mangle: For specialized packet alteration. Supports PREROUTING, INPUT, OUTPUT, POSTROUTING and also FORWARD (alter packet being routed through the box).
+	raw: Runs at highest priority and often for configuring exemptions to connection tracking. Uses 2 chains PREROUTING (alter packet arriving via any interface), POSTROUTING.
+	security: Used for Mandatory Access Control networking rules, as implemented by security modules like SELinux. 
+
+
+Create a new namespace net1, we will do everything here so we are sandboxed.
+If we list all the rules in all our chains for each table, we see that none of the chains have any rules yet.
+The only policies (rules) that are defined are for ACCEPT. But we see the ACCEPTs have no contents.
+Our filter chain:
+
+Chain INPUT (policy ACCEPT)
+target     prot opt source               destination         
+
+Chain FORWARD (policy ACCEPT)
+target     prot opt source               destination         
+
+Chain OUTPUT (policy ACCEPT)
+target     prot opt source               destination
+
+
+*The chain traversal order:
+	packets destined locally: PREROUTING -> INPUT
+	packets destined for other host: PREROUTING -> FORWARD -> POSTROUTING
+	locally generated packets: OUTPUT -> POSTROUTING
+
+
+We see there are no listings. The "target     prot opt source               destination" lines are headers.
+For learning purposes, we will use the '-v' flag as well, so that we can get verbose listings.
+
+When we go to append a new rule, we have the following parameters to pass it:
+	-p (protocol)
+		default value is 'all'. See /etc/protocols for list of all protocols you can add.
+	-s (source)
+		specify an ip or a hostname, or even a subnet using /mask notation. If absent, matches on all src addresses.
+	-d (destination)
+		destination, ip or hostname
+	-j (jump)
+		jumps to a target chain. Can be ACCEPT, DROP, QUEUE, RETURN, or a user-defined chain
+	-i (input interface)
+		indicates the interface through which the incoming packets are coming through. If missing, uses all interfaces. Applies to INPUT, FORWARD, PREROUTING.
+	-o (output interface)
+		indicates the interface through which outgoing packets are coming through. If missing, uses all interfaces. Applies to INPUT, FORWARD, PREROUTING.
+
+Some further options for specific protocols:
+	-sport (source port) for TCP/UDP
+	-dport (destination port) TCP/UDP
+	-tcp-flags (TCP flags) TCP -> such as SYN, ACK, FIN, RST, URG, PSH, ALL, NONE.
+	-icmp-type (ICMP type) ICMP -> type '0' for reply, type '8' for echo.
+
+
+We will use a veth pair to test out our rules. Since packets which are transmitted in one end immediately appear on the other end, this should be a good candidate for looking at the difference in these rules.
+Our pair will be called veth1, veth2 and will have ip addresses 10.0.1.2/24 and 10.0.1.3/24 and will reside in separate namespaces net1, net2.
+
+1. Drop all ICMP packets that are given to the veth1 device.
+	>> sudo ip netns exec net1 iptables -t filter -A INPUT -i veth1 -p icmp -j DROP
+
+	looking at tcpdump, we see the ARP messages were sent out, because ping was constructing its ethernet frame, and the ICMP echo was sent over veth1, veth2 received it and sent back a reply, and veth1 got the reply. Yet, our ping command never received the reply. It just hung. But the reply arrived? This is odd. And why did the request get sent out if we blocked that?
+
+	- try a ping and specify the veth1 interface explicitly
+		this resulted in the same behaviour.
+		also notice that if you list the chains, you see that the input drop rule processed 3 packets and the output rule processed 3 packets.
+		it appears that it is the last reply, which veth1 receives, which is actually being dropped.
+		it seems the definition of INPUT is not so obvious. Even sending the packet over veth1 explicitly did not trigger this. Which seems to suggest that transmitting on veth1 is not blocked,
+			but that when veth1 genuinely receives a packet it is blocked.
+	- is this just a tcpdump hook priority thing?
+
+	let's install the perf tool and see if we can figure out what's going on:
+	
+	>> sudo apt install linux-tools-common
+
+	now let's run ping using perf:
+
+	>>  sudo ip netns exec net1 perf trace --no-syscalls --event 'net:*' ping 10.0.1.3 -c1 >/dev/null
+
+	net_dev_queue: notify kernel that a packet has been received in the socket buffer.
+
+	[[ protocol=0x0806 is the ARP protocol. We can see the packet queued up in the veth1 socket buffer then transmitted by veth1, then veth2 is notified of the receive and receives it.]]
+	((seems like net_dev_xmit / netif_receive_skb are the final stops. What is the difference between them and net_dev_start_xmit / netif_rx ?? ))
+	queue up a packet on veth1 and transmit it
+     0.000 ping/13183 net:net_dev_queue:dev=veth1 skbaddr=0xffff8b96488bd100 len=42
+     0.013 ping/13183 net:net_dev_start_xmit:dev=veth1 queue_mapping=0 skbaddr=0xffff8b96488bd100 vlan_tagged=0 vlan_proto=0x0000 vlan_tci=0x0000 protocol=0x0806 ip_summed=0 len=42 data_len=0 network_offset=14 transport_offset_valid=0 transport_offset=65533 tx_flags=0 gso_size=0 gso_segs=0 gso_type=0
+
+	receive packet on veth2
+     0.018 ping/13183 net:netif_rx_entry:dev=veth2 napi_id=0x3 queue_mapping=0 skbaddr=0xffff8b96488bd100 vlan_tagged=0 vlan_proto=0x0000 vlan_tci=0x0000 protocol=0x0806 ip_summed=0 hash=0x00000000 l4_hash=0 len=28 data_len=0 truesize=768 mac_header_valid=1 mac_header=-14 nr_frags=0 gso_size=0 gso_type=0
+     0.023 ping/13183 net:netif_rx:dev=veth2 skbaddr=0xffff8b96488bd100 len=28
+     0.027 ping/13183 net:netif_rx_exit:ret=0
+
+	transmit packet on veth1 and receive on veth2
+     0.031 ping/13183 net:net_dev_xmit:dev=veth1 skbaddr=0xffff8b96488bd100 len=42 rc=0
+     0.038 ping/13183 net:netif_receive_skb:dev=veth2 skbaddr=0xffff8b96488bd100 len=28
+
+	^^Those all had the same skbaddr (socket buffer address) reference and pertained to the same packet.
+
+	queue up a packet on veth2 and transmit it
+     0.057 ping/13183 net:net_dev_queue:dev=veth2 skbaddr=0xffff8b96488bd800 len=42
+     0.063 ping/13183 net:net_dev_start_xmit:dev=veth2 queue_mapping=0 skbaddr=0xffff8b96488bd800 vlan_tagged=0 vlan_proto=0x0000 vlan_tci=0x0000 protocol=0x0806 ip_summed=0 len=42 data_len=0 network_offset=14 transport_offset_valid=0 transport_offset=65533 tx_flags=0 gso_size=0 gso_segs=0 gso_type=0
+
+	receive packet on veth1
+     0.067 ping/13183 net:netif_rx_entry:dev=veth1 napi_id=0x3 queue_mapping=0 skbaddr=0xffff8b96488bd800 vlan_tagged=0 vlan_proto=0x0000 vlan_tci=0x0000 protocol=0x0806 ip_summed=0 hash=0x00000000 l4_hash=0 len=28 data_len=0 truesize=768 mac_header_valid=1 mac_header=-14 nr_frags=0 gso_size=0 gso_type=0
+     0.071 ping/13183 net:netif_rx:dev=veth1 skbaddr=0xffff8b96488bd800 len=28
+     0.075 ping/13183 net:netif_rx_exit:ret=0
+
+	transmit packet on veth2 and receive on veth1
+     0.079 ping/13183 net:net_dev_xmit:dev=veth2 skbaddr=0xffff8b96488bd800 len=42 rc=0
+     0.084 ping/13183 net:netif_receive_skb:dev=veth1 skbaddr=0xffff8b96488bd800 len=28
+
+	queue up packet on veth1 and transmit it
+     0.090 ping/13183 net:net_dev_queue:dev=veth1 skbaddr=0xffff8b96488bca00 len=98
+     0.094 ping/13183 net:net_dev_start_xmit:dev=veth1 queue_mapping=0 skbaddr=0xffff8b96488bca00 vlan_tagged=0 vlan_proto=0x0000 vlan_tci=0x0000 protocol=0x0800 ip_summed=0 len=98 data_len=0 network_offset=14 transport_offset_valid=1 transport_offset=34 tx_flags=0 gso_size=0 gso_segs=0 gso_type=0
+
+	receive packet on veth2
+     0.098 ping/13183 net:netif_rx_entry:dev=veth2 napi_id=0x3 queue_mapping=0 skbaddr=0xffff8b96488bca00 vlan_tagged=0 vlan_proto=0x0000 vlan_tci=0x0000 protocol=0x0800 ip_summed=0 hash=0x00000000 l4_hash=0 len=84 data_len=0 truesize=768 mac_header_valid=1 mac_header=-14 nr_frags=0 gso_size=0 gso_type=0
+     0.102 ping/13183 net:netif_rx:dev=veth2 skbaddr=0xffff8b96488bca00 len=84
+     0.106 ping/13183 net:netif_rx_exit:ret=0
+
+	transmit packet on veth1 and receive on veth2
+     0.109 ping/13183 net:net_dev_xmit:dev=veth1 skbaddr=0xffff8b96488bca00 len=98 rc=0
+     0.113 ping/13183 net:netif_receive_skb:dev=veth2 skbaddr=0xffff8b96488bca00 len=84
+
+	queue up packet on veth2 and tramsit it
+     0.126 ping/13183 net:net_dev_queue:dev=veth2 skbaddr=0xffff8b96488bd800 len=98
+     0.129 ping/13183 net:net_dev_start_xmit:dev=veth2 queue_mapping=0 skbaddr=0xffff8b96488bd800 vlan_tagged=0 vlan_proto=0x0000 vlan_tci=0x0000 protocol=0x0800 ip_summed=0 len=98 data_len=0 network_offset=14 transport_offset_valid=1 transport_offset=34 tx_flags=0 gso_size=0 gso_segs=0 gso_type=0
+
+	receive packet on veth1
+     0.132 ping/13183 net:netif_rx_entry:dev=veth1 napi_id=0x3 queue_mapping=0 skbaddr=0xffff8b96488bd800 vlan_tagged=0 vlan_proto=0x0000 vlan_tci=0x0000 protocol=0x0800 ip_summed=0 hash=0x00000000 l4_hash=0 len=84 data_len=0 truesize=768 mac_header_valid=1 mac_header=-14 nr_frags=0 gso_size=0 gso_type=0
+     0.135 ping/13183 net:netif_rx:dev=veth1 skbaddr=0xffff8b96488bd800 len=84
+     0.138 ping/13183 net:netif_rx_exit:ret=0
+
+	transmit packet on veth2 and receive on veth1
+     0.140 ping/13183 net:net_dev_xmit:dev=veth2 skbaddr=0xffff8b96488bd800 len=98 rc=0
+     0.144 ping/13183 net:netif_receive_skb:dev=veth1 skbaddr=0xffff8b96488bd800 len=84
+
+
+
+	New theory: the INPUT chain is for packets coming into your program and OUTPUT is for packets leaving your program.
+		This is why the packets still show up on the devices, because they are there, they are just dropped between transferring the packet from your device into your program.
+		As for leaving, this is why nothing was transmitted, because the ping program doesn't actually assemble the ethernet frame itself, its kernel that does this, but the ICMP protocol was blocked to begin with and so nothing got assembled whatsoever.
+
+	Let's run a netcat client and server on our two ends of our veth and see what happens.
+
+	Client:
+		>> sudo ip netns exec net1 nc 10.0.1.3 7000
+	Server:
+		>> sudo ip netns exec net2 nc -l 10.0.1.3 7000
+
+	With this setup and no rules against TCP, we see the ARP exchange at the start and then the two messages appear on both devices. We also saw the messages appear on both netcat sessions.
+	Now, let's try to blocking TCP INPUT on veth1. This should mean our client can send messages but cannot receive them.
+
+	> sudo ip netns exec net1 iptables -t filter -A INPUT -i veth1 -p tcp -j DROP
+
+	This did not work. We were unable to send the message from the client to server. Why? Well, if we look at the number of packets sent there is a clue - a lot more than one.
+	When a TCP session is first initaited, there is a handshake. But we are dropping all incoming TCP messages, meaning the handshake can never be established.
+	We can choose to allow specific TCP messages, so that the handshake can be established.
+	If we add that rule above our current one, then it will get matched on first. Any messages that aren't part of the handshake will be dropped.
+	So which message types do we need to accept to allow the handshake to establish? The client will send a SYN (synchronize) message, the server will reply with a SYN+ACK, and the client will return an ACK.
+	The --tcp-flags argument here is a bit odd. We first specify a comma-separated group of flags we are interested in (SYN, ACK) and then specify the ones we want to match against, in this case SYN and ACK.
+
+	> sudo ip netns exec net1 iptables -t filter -A INPUT -i veth1 -p tcp --tcp-flags SYN,ACK SYN,ACK -j ACCEPT
+	> sudo ip netns exec net1 iptables -t filter -A INPUT -i veth1 -p tcp -j DROP
+
+	Now when we run, we notice that our client was successfully able to transmit its message across, but the server was unable to respond.
+	If we look at the tcpdump we will see that the client's message is actually transmitted many times through veth1 and that veth1 also receives the server reply many times as well.
+	This is because we are matching on SYN+ACK flags. In other words, if there is a packet with both SYN and ACK set, we accept it. But if the packet only has SYN set, or only ACK set, we drop it.
+	Since the client sends a SYN, and outgoing messages are ok, this is sent across. The client then receives SYN+ACK, which our rule says to accept, so this comes through.
+	Finally, the client responds with ACK, so the handshake is established.
+	The issue now is that the client cannot receive ACKs and so it sends its message across, the server writes it to the console and ACKs it, but the client never gets the ACK, causing it to retransmit the message.
+	The reason the server is resending its message is because its message never reaches the client and so the client never gives an ACK, so the server thinks it must retransmit.
+	This example isn't very useful, but was just meant to demonstrate how the INPUT chain works. This is not packets incoming on veth1, this is packets incoming to the program which are also received on veth1.
+
+	Let's say we did at least want to clean up all the retransmissions and accept ACKs as well. We want to insert this rule above the drop rule, so that it runs first.
+	First, we can list our the numbers assigned to our rules:
+
+	> sudo ip netns exec net1 iptables -t filter -n -L -v --line-numbers
+	
+	We see the drop rule is number 2. We will insert our new rule as the number 2 rule, then, pushing this drop rule down to number 3.
+
+	> sudo ip netns exec net1 iptables -t filter -I INPUT 2 -i veth1 -p tcp --tcp-flags ACK ACK -j ACCEPT
+
+	This works, now we can send multiple messages. However, we can also receive them too, since the server's messages always have the ACK flag set when responding. So, we've undone our work.
+	If we really wanted to do this, we would need to use conntrack so that we can filter packets by TCP state instead.
+
+	If we look at the NF_IP_LOCAL_IN netfilter hook, which is where INPUT chain is hooked, we see this happens once routed is completed if determined it will end up locally. That's why it goes through veth1.
+	And NF_IP_LOCAL_OUT is when any local traffic is generated - the moment it hits the network stack.
+
+	
+2. Let's add our own custom chain.
+
+	So far we've seen the INPUT and OUTPUT chains and how they work. Now let's try to create our own custom chain.
+	We will use our chain to block ping packets coming from 10.0.1.2, the address of veth1. We will add this chain to the filter table.
+	Then, we will try to ping veth1 via veth2.
+
+	> sudo ip netns exec net2 iptables -t filter -N MY_CHAIN
+
+	If we now list our chains, we will see that it exists and has no rules associated with it.
+	A user-defined chain is not actually associated with a netfilter hook though. The only way you can reach it is by jumping to that chain from one of the pre-defined chains.
+
+	So, we could have our chain drop all packets it sees and then tell the output chain to jump to our chain when the destination ip is 10.0.1.2.
+
+	> sudo ip netns exec net2 iptables -t filter -A MY_CHAIN -p tcp -j DROP
+
+	We are now dropping all packets on our custom chain. Let's try and ping and we should see everything is ok and no packets traversed this chain at all.
+	Yep, both machines are able to ping one another.
+
+	> sudo ip netns exec net2 iptables -t filter -A OUTPUT -p tcp -s 10.0.1.2 -j MY_CHAIN
+
+	Now, if our program outputs any packets with source 10.0.1.2 they will go to our chain. Of course, this is still ok since veth2 will use src 10.0.1.3, and 10.0.1.2 will come into INPUT.
+	We can still ping.
+	Either we need to change this to drop 10.0.1.3 or we need to specify this above rule on the input chain. Let's do the latter.
+
+	> sudo ip netns exec net2 iptables -t filter -A INPUT -p tcp -s 10.0.1.2 -j MY_CHAIN
+
+	This still worked. Why? Because our protocol is TCP!
+
+	> sudo ip netns exec net2 iptables -t filter -A INPUT -p icmp -s 10.0.1.2 -j MY_CHAIN
+
+	Now we see that our icmp rule caught 2 packets, but our custom chain rule got zero. What?? Ah yes, our custom chain only drops tcp packets. Let's drop icmp.
+
+	> sudo ip netns exec net2 iptables -t filter -A MY_CHAIN -p icmp -j DROP
+
+	Now we see that pinging from either side does not work. The 10.0.1.2 can't send us an echo when it tries to ping us, and it can't send us a reply when we try to ping it.
+
+	We can also add a comment to our rule using: -m comment --comment "my comment"
+
+
+---> INPUT, OUTPUT & custom rules (filter chain)
+---> article on mangle chain
+---> article on nat
+---> article on raw chain and marked routing
+---> article on the same-namespace veth problem
+
+
+
+
+
+
+
+
