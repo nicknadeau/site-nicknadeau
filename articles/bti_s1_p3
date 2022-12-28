@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="styles.css">
+<title>Building The Internet</title>
+<meta name="description" content="Let's implement a virtual NIC for our virtual ethernet cable.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>Building The Internet</h1>
+<h2>Section 1: The Physical Layer</h2>
+<h3>Part 3: Implementing Our Virtual NIC</h3>
+<p><font size="-1">Saturday December 31, 2022.</font>
+
+<p>In the previous article, we looked at the anatomy of an IEEE 802.3 Ethernet Frame. Now, we're ready to write some code. In particular, we are going to design our NIC or Network Interface Card. Normally, this is done at the hardware level, but we are virtualizing everything here, so our NIC will be software. The purpose of the NIC is to provide the first level of abstraction in the networking stack: the ability to send and receive data packets. Our NIC will receive incoming packets from the computer it is attached to, and will then place that packet inside an ethernet frame and transmit the whole frame to the other side. It will also be responsible for receiving ethernet frames and then pulling out the packets and placing them in a queue for the user to pick up. The out-going packets will be placed in the TX queue and the in-coming packets will be placed in the RX queue. You'll see these abbreviations often in networking - TX stands for transmit and RX for receive.
+
+<p>Before we begin implementing our NIC, the first thing we need to settle on is the structure of our ethernet frames. We'll use the same format as the IEEE 802.3 frames, with a preamble, a start and end frame delimiter and a packet gap, but a 7-byte preamble is a bit overkill for us. We'll go with something shorter - 3 bytes. That should provide us with enough time to get our synchronization right. We'll keep the preamble byte pattern the same though: 10101010. We'll also keep the start frame delimiter the same: 10101011. I don't believe the end frame delimiter's value is part of the specification though, since it's sometimes implemented differently. Either way, we'll just re-use the preamble pattern, 10101010, since then it is distinguishable from the start frame delimiter as well as the preamble (since the preamble is 3 bytes long and the end of frame delimiter is 1, the size will differentiate the two). As for the inter-packet gap, we probably also do not need 12 bytes but can go with something shorter, like 6.
+
+<p>We'll begin by implementing the logic to detect the frame preamble and to synchronize with the other side. You can watch <b>this video</b> of me coding up the implementation to get a sense of how this is going to work. I'll summarize here all the important parts of the implementation, but the video is going to be more hands-on and explain some of the nuances.
+
+<p>The first step is to create the base interface of our NIC, which simply allows us to create and destroy our NIC, as well as plug and unplug an ethernet cable into it and out of it. You might be wondering why our cable and NIC are both destroyable - that's because we need to implement these features with threads, and we want to have a clean way of shutting these down.
+
+</body>
+</html>

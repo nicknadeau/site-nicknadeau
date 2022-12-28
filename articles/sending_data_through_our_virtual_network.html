@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="styles.css">
+<title>Part 3: Sending Data Through Our Virtual Network</title>
+<meta name="description" content="Part 3 in a series on networking looks at how we can send data between hosts in our virtual network.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>Part 3: Sending Data Through Our Virtual Network</h1>
+<p><font size="-1">Wednesday December 28, 2022.</font>
+<br><font size="-1"><a href="../articles.html">Back To Articles</a></font>
+
+<p>In the last article we finally set up our virtual network. Recall that this is what it looks like:</p>
+
+<img src="../img/virtual_network_machines.png" alt="virtual network machines">
+
+<p>Now, let's actually try and send some data through our network. We will use netcat to setup a simple server that listens on Host-3's eth0 device on port 5000, and then we will try and connect to the server from inside Host-1 and send some data across.</p>
+
+<p>For this, we will use two terminals. On the first terminal, we will run our server by simply running: <span class="code">sudo ip netns exec Host-3 nc -l 10.0.2.2 5000</span>. Now, in a separate terminal, we will try and connect to this server from Host-1 by running: <span class="code">sudo ip netns exec Host-1 nc 10.0.2.2 5000</span>.</p>
+
+<p>But after we run this second command we see that it returns immediately. The connection didn't appear to be established. Netcat didn't tell us what happened, so it's a little unclear, but we expected to receive a prompt we could use to send data. Actually if we run <span class="code">echo $?</span> we can see that netcat returned 1, confirming our suspicion that something did indeed go wrong. Actually, we can pass the <code>-v</code> flag in to netcat to tell it to be verbose, and after doing that we can clearly see what's going wrong:</p>
+
+<pre><code>$ sudo ip netns exec Host-1 nc -v 10.0.2.2 5000
+nc: connect to 10.0.2.2 port 5000 (tcp) failed: Network is unreachable
+</code></pre>
+
+<p>It says the network is unreachable. In other words, Host-1 has no idea how to route packets out to Host-3. Let's run the <code>ip route</code> command inside Host-1 so we can take a look at its routing table, since clearly something is going wrong with routing:</p>
+
+<pre><code>$ sudo ip netns exec Host-1 ip route
+10.0.1.0/24 dev eth0 proto kernel scope link src 10.0.1.2
+</code></pre>
+
+<p>Well, this certainly explains it. We have a rule that says any packets that are destined for an ip address that begins with 10.0.1 (remember, the /24 subnet mask means we only care about the first 24 bits of the address, or the first 3 bytes) should go to the eth0 device and be given source ip address 10.0.1.2. But we are trying to send a packet to 10.0.2.2, and so our destination does not begin with 10.0.2. Since there's no other rule to tell the networking stack what to do, Host-1 doesn't know where to send that packet, and so it just immediately drops it.</p>
+
+<p>What we need is another rule that tells Host-1 where to send packets that are destined for 10.0.2 addresses. Now, we could turn the eth0 device into our default gateway, which would mean we send all packets for any address at all through it, but since it doesn't actually have a connection to the outside world, and is completely trapped inside our virtual network, that would be a bit misleading. We would have a whole bunch of addresses that we claim we can route packets to but which actually have no routes to them. We'll come back to this idea at the end of this article, just to see what happens to such packets.</p>
+
+<p>Instead, let's be more specific and just add another routing rule that looks identical to the one we already have, but for 10.0.2.2 addresses. To do this, we can run: <span class="code">sudo ip netns exec Host-1 ip route add 10.0.2.0/24 via 10.0.1.2 dev eth0</span>. This is saying we want all addresses in the 10.0.2 subnet to be routed through the eth0 device using source ip address 10.0.1.2. You'll notice the last byte in our destination address is zero. That's because we are specifying a subnet, not an address, since we are giving the /24 directive. Since /24 means we only consider the first 3 bytes, the last byte is meaningless. In fact, we can simply run the same command but omitting the final byte altogether and everything will work, because we are specifying a subnet and not a specific ip address: <span class="code">sudo ip netns exec Host-1 ip route add 10.0.2/24 via 10.0.1.2 dev eth0</span>. If you do happen to specify the last byte and you make it non-zero, you'll be given the following error, telling you that your address prefix is the wrong length (because you claimed it was 24 bits long but you ended up setting more than 24 bits): <span class="code">Error: Invalid prefix for given prefix length</span>.</p>
+
+<p>Okay, now that we've set our route, let's take a look at Host-1's routing table again:</p>
+
+<pre><code>$ sudo ip netns exec Host-1 ip route
+10.0.1.0/24 dev eth0 proto kernel scope link src 10.0.1.2 
+10.0.2.0/24 via 10.0.1.2 dev eth0
+</code></pre>
+
+<p>Another handy query is using the <code>ip route</code> command's <code>get</code> feature to get a route for a specific address. Now, if we ask for the route to 10.0.2.2 inside Host-1, we will see it tells us 10.0.2.2 is reached by sending packets to the eth0 device using source ip address 10.0.1.2:</p>
+
+<pre><code>$ sudo ip netns exec Host-1 ip route get 10.0.2.2
+10.0.2.2 dev eth0 src 10.0.1.2 uid 0 
+    cache
+</code></pre>
+
+<p>Alright, let's try re-running our netcat command: <span class="code">sudo ip netns exec Host-1 nc 10.0.2.2 5000</span>. Now, we no longer exit immediately with an error but are given the netcat prompt we expect. Let's type some data in and press enter to send it and see what happens. Well... nothing happens. The server did not receive the data, even though it appears we sent it. So what's going wrong now? We have a route to Host-3.</p>
+
+<p>The problem stems from a little clue the verbose error output of netcat gave us when we first failed to connect. If you scroll up, you'll see that netcat told us it was using TCP to establish a connection. But the way TCP works is by getting both sides of the connection to exchange some data back and forth to agree that a session is now in progress. That process is called the TCP handshake. Host-1 is able to send its handshake data over to Host-3, because it has a route to Host-3, but Host-3 doesn't have a route back to Host-1, which means it cannot respond and the handshake cannot complete. Actually, even if the handshake could be skipped, TCP still would not work in this setup because TCP requires that the recipient of a packet sends a special acknowledgement packet back to the sender to let the sender know they received their data. The sender would think the data was not received, and would just try to re-send it again.</p>
+
+<p>But this is an easy fix. All we have to do is add a route to any packets destined for the 10.0.1 subnet into Host-3's namespace. We can do so like this: <span class="code">sudo ip netns exec Host-3 ip route add 10.0.1/24 via 10.0.2.2 dev eth0</span>.</p>
+
+<p>Now, let's re-connect our client (Host-1) and try to send some data to Host-3. We are now able to successfully send a message from Host-1 to Host-3, and Host-3 is also able to send its own data back to us. Try it out.</p>
+
+<p>You'll notice that we specified a larger subnet than we needed in both cases. We told Host-1 that whenever it has a packet destined for an address starting with 10.0.2 that it should send that packet out its eth0 interface. But actually, the only valid address in that subnet that's in our network is 10.0.2.2. If we create a netcat session but for address 10.0.2.3, we will see it still gives us a prompt, but when we send data it's not actually goign anywhere. Netcat is sending that data out the eth0 interface, but there is no one on the other side to receive it. Actually, the <code>ping</code> utility is a bit more clear with all this. Let's try and ping 10.0.2.3 from inside Host-1:</p>
+
+<pre><code>$ sudo ip netns exec Host-1 ping 10.0.2.3
+PING 10.0.2.3 (10.0.2.3) 56(84) bytes of data.
+</code></pre>
+
+<p>This is all we see. We never get a response back. The ping command just hangs. If we <code>CTRL+C</code> out of ping we can see it actually did attempt to send a whole bunch of ping packets out, but all of them were lost (that is, no response was ever sent back for any of them):</p>
+
+<pre><code>$ sudo ip netns exec Host-1 ping 10.0.2.3
+PING 10.0.2.3 (10.0.2.3) 56(84) bytes of data.
+^C
+--- 10.0.2.3 ping statistics ---
+50 packets transmitted, 0 received, 100% packet loss, time 50168ms
+</code></pre>
+
+<p>I let this run for 50168 milliseconds, or about 50 seconds. Ping attempts to send out a new ping request every second, and so 50 packets were transmitted. This is what happens if we attempt to establish TCP connections with ip addresses that do not exist, or for which there is no route to them. The packets just go out, but since no one ever responds, we just hang and cannot even initiate a connection. Ping works on the IP protocol, not TCP, but it relies on a two-way communication, a response to its request, and so it simulates this problem very nicely for us.</p>
+
+<p>But, we still have the question of "where do these packets end up exactly?" when we try to send packets to an address we have no route to. In the next article, we are going to use tools to introspect data going across the network so that we can see what's happening to our ping packets we're sending out. Before we do that though, let's take a moment to fix up our <code>setup_network.sh</code> script from the previous article, so that part of our network setup is also establishing these subnet routing rules that allow each of the 4 hosts to send data to one another. Here's the lines we will append to the bottom of our script:</p>
+
+<pre><code>echo 'Configuring routing rules...'
+sudo ip netns exec Host-1 ip route add 10.0.2/24 via 10.0.1.2 dev eth0
+sudo ip netns exec Host-1 ip route add 10.0.3/24 via 10.0.1.2 dev eth0
+sudo ip netns exec Host-2 ip route add 10.0.2/24 via 10.0.1.3 dev eth0
+sudo ip netns exec Host-2 ip route add 10.0.3/24 via 10.0.1.3 dev eth0
+sudo ip netns exec Host-3 ip route add 10.0.1/24 via 10.0.2.2 dev eth0
+sudo ip netns exec Host-3 ip route add 10.0.3/24 via 10.0.2.2 dev eth0
+sudo ip netns exec Host-4 ip route add 10.0.1/24 via 10.0.3.2 dev eth0
+sudo ip netns exec Host-4 ip route add 10.0.2/24 via 10.0.3.2 dev eth0
+</code></pre>
+
+<p>You'll notice that Host-1 did not need to add a rule to communicate with Host-2 and vice versa. That's because both Host-1 and Host-2 belong to the same subnet, 10.0.1, and every host already has a routing rule for getting to its own subnet. That rule was added automatically by the kernel when we assigned an ip address to our eth0 devices. Since we specified our ip addresses <i>and</i> a subnet mask (10.0.1.2/24 for example), what we effectively said was that this device has the ip address we specified and that it also belongs to the subnet we specified, and so a rule was added saying that all packets destined for a specific subnet should go through that device.</p>
+
+<p>Let's run our teardown script and then our setup script once again, so that now we've got a network where all the hosts are connected. After doing that, try sending some pings from one host to another. You'll now be able to ping any host from any other host within our network.</p>
+
+</body>
+</html>

@@ -1,0 +1,9 @@
+Networking Series
+
+1. Network Namespaces
+2. Creating the virtual network
+
+
+-> Communicating "host does not exist" with more specific subnets or iptables
+-> What happens if we have multiple routes for a subnet or ip address?
+-> Switches inefficient, let's actually make simple routers with iptables

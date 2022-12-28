@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="styles.css">
+<title>Part 7: Listening For ARP Packets On A Raw Socket</title>
+<meta name="description" content="Part 7 in a series on networking looks at how we can set up a simple raw socket server that listens for incoming ARP packets.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>Part 7: Listening For ARP Packets On A Raw Socket</h1>
+<p><font size="-1">Thursday December 29, 2022.</font>
+<br><font size="-1"><a href="../articles.html">Back To Articles</a></font>
+
+<p>In the previous article we took a look at how to use packet domain sockets and set up a very basic raw socket that listened for incoming packets. We're going to take our packet listener a step further now, and get it to ignore all packet types except ARP packets, and then to decode the ARP data into a struct.</p>
+
+<p>Before getting that far, let's at first start by adding in some code that will detect ARP packets, and when it does detect them, will print off the destination and sender MAC addresses:</p>
+
+<pre><code>#include <sys/socket.h>
+#include <assert.h>
+#include <linux/if_ether.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <net/ethernet.h>
+
+static void printMacAddress(unsigned char *p)
+{
+        for (int i = 0; i < 6; i++) {
+                printf("%02x", p[i]);
+                if (i < 5) {
+                        printf(":");
+                }
+        }
+}
+
+int main(int argc, const char **argv) {
+        int fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+        assert(-1 != fd);
+
+        char buffer[4096];
+        int bytesRead = read(fd, buffer, sizeof(buffer));
+        while (bytesRead > 0) {
+                uint16_t *protocolNetByteOrder = (uint16_t *) (buffer + 12);
+                uint16_t protocolType = ntohs(*protocolNetByteOrder);
+
+                if (ETHERTYPE_ARP == protocolType) {
+                        unsigned char *destinationMAC = (unsigned char *) buffer;
+                        unsigned char *senderMAC = (unsigned char *) (buffer + 6);
+
+                        printf("Read ARP packet %d bytes long\n", bytesRead);
+                        printf("Sender MAC: ");
+                        printMacAddress(senderMAC);
+                        printf("\nDestination MAC: ");
+                        printMacAddress(destinationMAC);
+                        printf("\n");
+                }
+
+                fflush(stdout);
+                bytesRead = read(fd, buffer, sizeof(buffer));
+        }
+
+        assert(0 == close(fd));
+
+        return 0;
+}
+</code></pre>
+
+<p>You can see we loop indefinitely, reading from our raw socket. The first thing we do is cast bytes 12 and 13 in the buffer into an unsigned 16-bit integer, since those two bytes are the ethernet protocol type. Recall, though, that integers are placed in sockets in network byte order, which may differ from our own machine's native byte order, so we need to use <code>ntohs</code> (<b>n</b>etwork <b>to</b> <b>h</b>ost <b>s</b>hort) to convert the 16-bit short from network byte order to host byte order. After that's done, we see if the protocol type is <code>ETHERTYPE_ARP</code>, and if so we print out the ethernet header information.</p>
+
+<p>Let's setup our virtual network, compile the code, and run our listener inside our Host-1 namespace. Then, in a second terminal, we will send a ping from Host-3 to Host-1. Here's the output we get:</p>
+
+<pre><code>$ ./setup_network.sh 
+Creating namespaces...
+Creating bridges...
+Creating virtual ethernet cables...
+Connecting virtual cables to bridges...
+Assigning host ip addresses...
+Setting all devices to promiscuous mode...
+Turning all devices up...
+Configuring routing rules...
+$ gcc -Wall -o packet_listener packet_listener.c 
+$ sudo ip netns exec Host-1 ./packet_listener 
+Read ARP packet 42 bytes long
+Sender MAC: c6:a3:e5:d2:87:a5
+Destination MAC: ff:ff:ff:ff:ff:ff
+Read ARP packet 42 bytes long
+Sender MAC: 76:5a:af:fb:33:e6
+Destination MAC: c6:a3:e5:d2:87:a5
+^C
+</code></pre>
+
+<p>We can see we intercepted two ARP packets, one from <code>c6:a3:e5:d2:87:a5</code> to the special broadcast MAC address <code>ff:ff:ff:ff:ff:ff</code>, and the other is clearly the response from <code>76:5a:af:fb:33:e6</code> back to the sender. Let's re-run this little experiment, but this time we will ping Host-2 from Host-3 but keep our socket listener program running inside Host-1:</p>
+
+<pre><code>$ ./teardown_network.sh 
+Destroying namespaces...
+$ ./setup_network.sh 
+Creating namespaces...
+Creating bridges...
+Creating virtual ethernet cables...
+Connecting virtual cables to bridges...
+Assigning host ip addresses...
+Setting all devices to promiscuous mode...
+Turning all devices up...
+Configuring routing rules...
+$ sudo ip netns exec Host-1 ./packet_listener 
+Read ARP packet 42 bytes long
+Sender MAC: 3e:13:12:cb:ea:40
+Destination MAC: ff:ff:ff:ff:ff:ff
+^C
+</code></pre>
+
+<p>You'll notice we still received the ARP request packet, since it was a broadcast packet that was sent to everyone. We never did get the reply packet back, though, since that was sent to a specific device. That shouldn't be surprising, we already covered this detail of how ARP works in an earlier article. However, this is something we need to keep in mind, our ARP server should only respond to ARP packets that are destined for it and not for someone else. In other words, we are eventually going to need a mechanism whereby we can determine our own ip address and ignore any packets destined for another ip. We will solve that problem when we get there, but for now let's focus on getting our packet listener into the right shape.</p>
+
+<p>Since our eventual plan is to have our ARP client and server share the same packet listener code, we're going to need to refactor this a bit. We don't want it to have a main function because it shouldn't be run as a standalone program, but rather embedded into a larger program and called directly, acting as more of a library function. So, we're going to replace the main function with a normal function signature and have the caller pass a callback function into us, which we can then invoke whenever an ARP packet arrives. This will also involve creating a simple struct to represent the ARP datagram.</p>
+
+<p>I'm going to create a new main file called <code>arp_client.c</code>, which is where our client code will reside. This client is going to call into our listener now. When it gets the ARP datagram back in its callback, it will print out what it received. Here's our new <code>arp_client.c</code>:</p>
+
+<pre><code>#include "packet_listener.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+
+static void packetHandler(arp_datagram_t *datagram) {
+        printf("\nARP Datagram\n");
+        printf("Hardware Address Type: %hu\n", datagram->hardwareAddressType);
+        printf("Protocol Address Type: %hu\n", datagram->protocolAddressType);
+        printf("Hardware Address Size: %hu\n", datagram->hardwareAddressSize);
+        printf("Protocol Address Size: %hu\n", datagram->protocolAddressSize);
+        printf("ARP Opcode: %hu\n", datagram->arpOpcode);
+}
+
+int main(int argc, const char **argv) {
+        startPacketListener(packetHandler);
+        return 0;
+}
+</code></pre>
+
+<p>And here's our new <code>packet_listener.c</code>:</p>
+
+<pre><code>#include "packet_listener.h"
+
+#include <sys/socket.h>
+#include <assert.h>
+#include <linux/if_ether.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <net/ethernet.h>
+
+
+void startPacketListener(packet_handler_t handler) {
+        int fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+        assert(-1 != fd);
+
+        char buffer[4096];
+        int bytesRead = read(fd, buffer, sizeof(buffer));
+        while (bytesRead > 0) {
+                uint16_t *protocolNetByteOrder = (uint16_t *) (buffer + 12);
+                uint16_t protocolType = ntohs(*protocolNetByteOrder);
+
+                if (ETHERTYPE_ARP == protocolType) {
+                        arp_datagram_t *datagram = (arp_datagram_t *) (buffer + 14);
+
+                        datagram->hardwareAddressType = ntohs(datagram->hardwareAddressType);
+                        datagram->protocolAddressType = ntohs(datagram->protocolAddressType);
+                        datagram->arpOpcode = ntohs(datagram->arpOpcode);
+
+                        handler(datagram);
+                }
+
+                bytesRead = read(fd, buffer, sizeof(buffer));
+        }
+}
+</code></pre>
+
+<p>And finally, here's our <code>packet_listener.h</code>:</p>
+
+<pre><code>#ifndef __PACKET_LISTENER_H__
+#define __PACKET_LISTENER_H__
+
+#include <stdint.h>
+
+typedef struct arp_datagram {
+        uint16_t hardwareAddressType;
+        uint16_t protocolAddressType;
+        uint8_t hardwareAddressSize;
+        uint8_t protocolAddressSize;
+        uint16_t arpOpcode;
+        const unsigned char *senderHardwareAddress;
+        const unsigned char *senderProtocolAddress;
+        const unsigned char *destinationHardwareAddress;
+        const unsigned char *destinationProtocolAddress;
+} arp_datagram_t;
+
+typedef void (*packet_handler_t)(arp_datagram_t *datagram);
+
+void startPacketListener(packet_handler_t handler);
+
+#endif  //__PACKET_LISTENER_H__
+</code></pre>
+
+<p>Let's re-create our network, compile our new program, and run it inside Host-1. Again, we will ping Host-1 from Host-3 from another terminal:</p>
+
+<pre><code>$ ./teardown_network.sh 
+Destroying namespaces...
+$ ./setup_network.sh 
+Creating namespaces...
+Creating bridges...
+Creating virtual ethernet cables...
+Connecting virtual cables to bridges...
+Assigning host ip addresses...
+Setting all devices to promiscuous mode...
+Turning all devices up...
+Configuring routing rules...
+$ gcc -Wall -o arp_client arp_client.c packet_listener.c 
+$ sudo ip netns exec Host-1 ./arp_client
+
+ARP Datagram
+Hardware Address Type: 1
+Protocol Address Type: 2048
+Hardware Address Size: 6
+Protocol Address Size: 4
+ARP Opcode: 1
+
+ARP Datagram
+Hardware Address Type: 1
+Protocol Address Type: 2048
+Hardware Address Size: 6
+Protocol Address Size: 4
+ARP Opcode: 2
+^C
+</code></pre>
+
+<p>We've got two ARP datagrams here, and one is opcode 1 (Request) and the other is 2 (Reply). That's what we expected. Our hardware address size is 6 bytes because it's a MAC address and our protocol address size is 4 bytes because it's an IPv4 address. This all looks correct. Now, let's proceed to do a bit more filtering in our client of the ARP datagram. Really, our client is only interested in ARP Replies, not Requests, since it is the one sending the request. Also, we don't want to build out a fully robust implementation here, all we want is a simple MAC-to-IPv4 implementation, so let's ignore any ARP replies that are not doing MAC-to-IPv4 resolutions. Once we've got that in place, we will then print off the source and destination MAC and IPv4 addresses for any packets which meet these criteria.</p>
+
+<p>After making these initial changes, here's the output we get running our client and issuing a ping in another terminal:</p>
+
+<pre><code>$ gcc -Wall -g -o arp_client arp_client.c packet_listener.c 
+$ sudo ip netns exec Host-1 ./arp_client
+ARP Reply arrived!
+Sender MAC address: ae:48:8c:33:5e:d4
+Sender IPv4 address: 10.0.1.2
+Destination MAC address: d2:56:ae:d2:9e:4d
+Destination IPv4 address: 10.0.2.2
+
+ARP Reply arrived!
+Sender MAC address: d2:56:ae:d2:9e:4d
+Sender IPv4 address: 10.0.2.2
+Destination MAC address: ae:48:8c:33:5e:d4
+Destination IPv4 address: 10.0.1.2
+
+^C
+</code></pre>
+
+<p>These MAC and IPv4 addresses are all what we expect them to be, and now we are only capturing the replies. We do see, however, that we are still getting replies which are meant for someone else.</p>
+
+</body>
+</html>

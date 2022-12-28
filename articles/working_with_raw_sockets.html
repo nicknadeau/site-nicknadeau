@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="styles.css">
+<title>Part 6: Working With Packet Domain Sockets</title>
+<meta name="description" content="Part 5 in a series on networking looks at the basics of using packet domain sockets.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>Part 6: Working With Packet Domain Sockets</h1>
+<p><font size="-1">Thursday December 29, 2022.</font>
+<br><font size="-1"><a href="../articles.html">Back To Articles</a></font>
+
+<p>In the previous article we discussed ARP, the address resolution protocol, and how it is used to create mappings between ip addresses (used by the layer 3 Internet Protocol) and MAC addresses (used by layer 2 ethernet frames). Now we are going to walk through a mini-series on how to implement ARP ourselves, since there's no better way to learn how something works than to build it yourself.</p>
+
+<p>Linux provides us with all sorts of different types of sockets for different uses. If we take a look at the manpage for the socket system call, <span class="code">man 2 socket</span>, then we see that the first argument given to the <code>socket</code> function is the domain. As per the manpage: "The domain argument specifies a communication domain; this selects the protocol family which will be used for communication". The manpage then goes on to list all sorts of domains we can choose from. For example, there is the <code>AF_INET</code> domain, which is probably the most popular one and is used for creating a socket for using the Internet Protocol (IPv4). The <code>INET</code> part of the name is an abbreviation of internet. You'll also notice all of the domains begin with the prefix <code>AF_</code>. The AF stands for Address Family. For further information on the different address families or domains we can look at the manpage <span class="code">man 7 address_families</span>.</p>
+
+<p>To implement ARP we can't use the <code>AF_INET</code> domain, since ARP is a layer 2 protocol built directly off the ethernet frames and does not know anything about IP. Instead, the domain we're interested in is <code>AF_PACKET</code>, which we are told is a "Low-level packet interface". Like all the domains, we can check out the manpage for that domain in particular to get some more information about it. For <code>AF_PACKET</code> we can take a look at <span class="code">man 7 packet</span>. The first sentence of the description tells us exactly what we want: "Packet sockets are used to receive or send raw packets at the device driver (OSI Layer 2) level". To implement ARP we need to implement at layer 2, so this is the domain we want to use.</p>
+
+<p>Our eventual goal is to implement ARP, but there are two actors involved in an ARP exchange. There's a client, which sends out an ARP request, and there's a server, which receives ARP requests and sends an ARP reply back to the client. For completeness, we'll implement both sides, but we'll start with the client since the kernel already acts as an ARP server by default and so our client will be able to function correctly without our own server. Either way, since both the client and server need to listen for incoming ARP packets (the client listens for a reply and the server for a request), let's begin by building a simple server which listens for ARP packets of any type.</p>
+
+<p>I'm going to write this code in C, but it can be written in any language which provides access to the appropriate system calls.</p>
+
+<p>First, let's read through the manpage to get a bit of a better sense on how to implement our simple packet listener. The next argument to pass to the <code>socket</code> function is the socket type, which the manpages tell us can either be <code>SOCK_RAW</code> or <code>SOCK_DGRAM</code>. The primary difference between the two is that a raw socket requires the user to construct the link-level header (that is, the ethernet frame) and you receive packets with the ethernet frame in tact, whereas the datagram socket operates at a slightly higher level and will construct the ethernet frame for you, given some configuration data, and will strip it off when the packet is received. Well, ARP is technically built on top of the ethernet frame, by placing the ARP protocol data inside the ethernet frame's data field, so we can actually just use a datagram socket in this case and let that take care of the ethernet frame building for us. We could use the raw socket directly, it would just be a bit more onorous on us, since we'd have to parse and validate the ethernet frames, which is not really something we're interested in doing and it would be better to have the kernel take care of that for us. However, we'll take a quick detour at first and use raw sockets just so we can see what actually has to happen, then we'll switch over to datagram sockets and get a sense of the level of abstraction they provide us with.</p>
+
+<p>Finally, the last argument is the protocol argument, and we are told we can find all of the protocols listed in the &ltlinux/if_ether.h&gt C header file. Let's find this header on our system and then have a look inside it:</p>
+
+<pre><code>$ find /usr/include/ -name if_ether.h
+/usr/include/linux/if_ether.h
+/usr/include/netinet/if_ether.h
+</code></pre>
+
+<p>The first file is the one we want, since it is within the <code>linux</code> directory. There's all sorts of protocols specified here. Before starting, I'm just going to run Wireshark and inside the Host-1 namespace and capture an ARP packet, since it will first be helpful to see what this packet even looks like before we begin trying to implement ARP.</p>
+
+<pre><code>$ ./setup_network.sh 
+Creating namespaces...
+Creating bridges...
+Creating virtual ethernet cables...
+Connecting virtual cables to bridges...
+Assigning host ip addresses...
+Setting all devices to promiscuous mode...
+Turning all devices up...
+Configuring routing rules...
+$ sudo ip netns exec Host-1 wireshark
+</code></pre>
+
+<p>While wireshark is running, I'll use another terminal to send out a ping request, since that will first generate an ARP request. Remember, there's an ARP cache, so the MAC address might already be cached and no ARP request will be sent out in that case. To prevent this, I simply tore down the network and re-created it, but if you didn't want to do that you could empty your cache as well. Alright, after doing that I've captured a few different packets, but the one I'm interested in is the ARP request.</p>
+
+<img src="../img/wireshark_arp_request.png" alt="wireshark arp request">
+
+<p>If we click on the Ethernet II portion of the dump, wireshark highlights the part of the packet that corresponds to the ethernet header:</p>
+
+<img src="../img/wireshark_arp_request_ethernet.png" alt="wireshark arp request ethernet frame">
+
+<p>We can see the first 6 bytes is the destination address, which in this case is the special broadcast MAC address <code>ff:ff:ff:ff:ff:ff</code>. The next 6 bytes is the source MAC address <code>4a:81:02:ac:50:bf</code>. Finally, the last two bytes is the protocol type, which is ARP. The ARP protocol is specified by <code>0806</code> in hex. After that, we see the ethernet frame's data, which is the ARP packet itself. The ARP portion makes up the remainder of the bytes:</p>
+
+<img src="../img/wireshark_arp_request_data.png" alt="wireshark arp request data">
+
+<p>We can see we've got 2 bytes for the hardware type (<code>0x0001</code> in hex in this case, which indicates Ethernet), then 2 bytes for the protocol type (<code>0x0800</code> for IPv4), then 1 byte for the hardware size, 1 byte for the protocol size, 2 bytes for the opcode (<code>0x0001</code>), followed by 6 bytes for the sender MAC, 4 bytes for the sender ip, then 6 bytes for the destination MAC and 6 bytes for the destination ip. But what does all of this information mean? Well, if we look up the RFC for ARP (<a href="https://datatracker.ietf.org/doc/rfc826/">RFC-826</a>), where the protocol is specified, we see that ARP is not just for building MAC-to-IP address associations. In fact, it's far more general than that. It's really meant to act as a protocol for mapping between layer 2 and layer 3 addresses, which may be all sorts of things. In practice, it's commonly used for MAC-to-IP mappings, and that's what we're interested in building, but its generality is what explains the fields in the ARP request we're seeing.</p>
+
+<p>The terminology ARP uses is that it provides a means of building an association between a hardware address (a level 2 address) and a protocol address (a level 3 address). Thus, the "hardware type" identifier in this case is <code>0x0001</code> to signify MAC addresses for ethernet. Our protocol type is <code>0x0800</code> to signify IPv4 addresses. In other words, this ARP request is for building a MAC-to-IPv4 association. The hardware size and protocol size are the sizes of the hardware address and the protocol address respectively, in bytes. Since MAC addresses are 6 bytes long and IPv4 addresses are 4, that's why we see these values as 6 and 4. The opcode is <code>0x0001</code> to signify this is an ARP request. A reply would have a different opcode. Then we see the sender MAC and IPv4 addresses followed by the destination's MAC and IPv4 addresses. Since the destination MAC is unknown at this point, it is set to all zeroes.</p>
+
+<p>So really, if we were to use a raw socket then we have to create that ethernet header ourselves and we will receive the header directly as well when we read bytes from the socket. That's not much of a problem, because the ethernet header is simple, so we'll do that first just to show how the differences between raw and datagram sockets.</p>
+
+<p>Okay, let's begin making our packet listener. I'm going to create this in a file named <code>packet_listener.c</code>. We'll begin by creating a raw socket and asserting it was created correctly:</p>
+
+<pre><code>#include &ltsys/socket.h&gt
+#include &ltassert.h&gt
+#include &ltlinux/if_ether.h&gt
+#include &ltarpa/inet.h&gt
+#include &ltunistd.h&gt
+
+int main(int argc, const char **argv) {
+        int fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+        assert(-1 != fd);
+
+        assert(0 == close(fd));
+        return 0;
+}
+</code></pre>
+
+<p>We create a raw socket using the packet domain. The packet protocol we're going to use is the <code>ETH_P_ALL</code> protocol, which means we will receive packets of any type. We have to run it through <code>htons</code> to convert the <code>ETH_P_ALL</code> value from host byte order to network byte order. <code>htons</code> stands for "<b>h</b>ost <b>to</b> <b>n</b>etwork <b>s</b>hort, and is used to convert between 16-bit host byte orderings to 16-bit network byte orderings. Since different machines may use different different byte orders, such as Little or Big Endian, a network byte order was invented so that host byte ordering assumptions would not bleed across the network. Otherwise, only machines that used the same byte orders could talk to one another coherently.</p>
+
+<p>Let's compile and run this program, just to convince ourselves we created our socket correctly:</p>
+
+<pre><code>$ gcc -Wall -o packet_listener packet_listener.c
+$ ./packet_listener 
+packet_listener: packet_listener.c:9: main: Assertion `-1 != fd' failed.
+</code></pre>
+
+<p>It looks like we failed to create our socket, since we got fd -1 back, which indicates an error occurred. If we go back to the manpage for <code>packet</code>, we see this there: "In order to create a packet socket, a process must have the CAP_NET_RAW capability in the user namespace that governs its network namespace". That would explain it. In order to create a raw socket we need elevated permissions which my normal user account doesn't have. If we run our program as root, then no assertions fail and the program returns 0, indicating the socket was successfully created:</p>
+
+<pre><code>$ sudo ./packet_listener 
+$ echo $?
+0
+</code></pre>
+
+<p>Alright, let's actually start reading some bytes out of our socket. Typically <code>recvfrom</code> is used to read from sockets, since it gives us some convenient utilities for reading them. But right now, let's just read directly with <code>read</code> and count the number of bytes we read from each packet. Just to see if and when we receive any data. We'll place this read loop after creating the socket:</p>
+
+<pre><code>        char buffer[4096];
+        int bytesRead = read(fd, buffer, sizeof(buffer));
+        while (bytesRead > 0) {
+                printf("Read %d bytes of data\n", bytesRead);
+                bytesRead = read(fd, buffer, sizeof(buffer));
+        }
+</code></pre>
+
+<p>Now, let's compile and run this on Host-1 and then send a ping from Host-3 to Host-1 and see what our program reports:</p>
+
+<pre><code>$ sudo ip netns exec Host-1 ./packet_listener 
+Read 98 bytes of data
+Read 98 bytes of data
+Read 42 bytes of data
+Read 42 bytes of data
+Read 42 bytes of data
+Read 42 bytes of data
+^C
+</code></pre>
+
+<p>It looks like we received 2 packets that were 98 bytes long and then 4 that were 42. If you count all the bytes listed in our wireshark capture above you'll see that an ARP packet is 42 bytes. So those must be ARP packets. Our ping command told us the ping sent 84 bytes of data in the ICMP packet, so where is 98 coming from? Well, if we look above we see that the ethernet header is 14 bytes long, and so if the ICMP data sis 84 bytes and that is encapsulated in an ethernet frame, then the full ICMP packet is 98 bytes long. So those must be ICMP packets we captured. Notice that we get all sorts of packets coming in. It's our job to filter them.</p>
+
+<p>Only writing the length of each packet isn't very interesting though, so let's actually add some logic to detect incoming ARP packets. I'll replace the while loop above with this new loop, which prints the ethernet header data out:</p>
+
+<pre><code>        char buffer[4096];
+        int bytesRead = read(fd, buffer, sizeof(buffer));
+        while (bytesRead > 0) {
+                printf("\nRead packet %d bytes long\n", bytesRead);
+                printf("Destination MAC address: ");
+                printMacAddress((unsigned char *) buffer);
+                printf("\nSource MAC address: ");
+                printMacAddress((unsigned char *) (buffer + 6));
+                printf("\nType: 0x%02x%02x\n", buffer[12] & 0xFF, buffer[13] & 0xFF);
+
+                bytesRead = read(fd, buffer, sizeof(buffer));
+        }
+</code></pre>
+
+<p>We also have to add this function to our program to make the above code work. This just prints some bytes out in MAC address format:</p>
+
+<pre><code>static void printMacAddress(unsigned char *p)
+{
+        for (int i = 0; i < 6; i++) {
+                printf("%02x", p[i]);
+                if (i < 5) {
+                        printf(":");
+                }
+        }
+}
+</code></pre>
+
+<p>Now, let's compile and run our listener in the Host-1 namespace again, and send a ping from Host-3 to Host-1:</p>
+
+<pre><code>$ gcc -Wall -o packet_listener packet_listener.c 
+$ sudo ip netns exec Host-1 ./packet_listener 
+
+Read packet 98 bytes long
+Destination MAC address: c6:b6:c8:76:0c:65
+Source MAC address: 4a:81:02:ac:50:bf
+Type: 0x0800
+
+Read packet 98 bytes long
+Destination MAC address: 4a:81:02:ac:50:bf
+Source MAC address: c6:b6:c8:76:0c:65
+Type: 0x0800
+
+Read packet 70 bytes long
+Destination MAC address: 33:33:00:00:00:02
+Source MAC address: e6:d0:ec:30:c1:77
+Type: 0x86dd
+
+Read packet 42 bytes long
+Destination MAC address: 4a:81:02:ac:50:bf
+Source MAC address: c6:b6:c8:76:0c:65
+Type: 0x0806
+
+Read packet 42 bytes long
+Destination MAC address: c6:b6:c8:76:0c:65
+Source MAC address: 4a:81:02:ac:50:bf
+Type: 0x0806
+
+Read packet 42 bytes long
+Destination MAC address: 4a:81:02:ac:50:bf
+Source MAC address: c6:b6:c8:76:0c:65
+Type: 0x0806
+
+Read packet 42 bytes long
+Destination MAC address: c6:b6:c8:76:0c:65
+Source MAC address: 4a:81:02:ac:50:bf
+Type: 0x0806
+^C
+</code></pre>
+
+<p>It looks like we have some request / reply messages here, since we see a few packets where the source and destination are flipped around. We see three different message types, including a new and unexpected one in a 70-byte packet. These types are <code>0x0800</code>, <code>0x86dd</code>, and <code>0x0806</code>. What could these types be? Well, we can grep through the header files inside the linux <code>net/</code> directory, where networking headers reside, and see what turns up:</p>
+
+<pre><code>$ grep -rn /usr/include/net -e '0800'
+/usr/include/net/ethernet.h:49:#define	ETHERTYPE_IP		0x0800		/* IP */
+/usr/include/net/route.h:85:#define	RTF_XRESOLVE	0x0800		/* External resolver.  */
+/usr/include/net/route.h:104:#define RTCF_NAT	0x00800000
+/usr/include/net/route.h:113:#define RTF_NAT		0x08000000
+/usr/include/net/if_ppp.h:89:#define SC_LOG_RAWIN	0x00080000	/* log all chars received */
+/usr/include/net/if_ppp.h:98:#define SC_RCV_ODDP	0x08000000	/* have rcvd char with odd parity */
+/usr/include/net/if_ppp.h:102:#define SC_DC_FERROR	0x00800000	/* fatal decomp error detected */
+</code></pre>
+
+<p>We already know that this type field is the type of protocol encapsulated in the ethernet frame's data. The file <code>/usr/include/net/ethernet.h</code> above looks like it's got the information we want. Let's open that up and see if those other types are defined there. It turns out they are. It looks like <code>0x0800</code> means the frame contains an IPv4 datagram, <code>0x86dd</code> means it contains an IPv6 datagram, and <code>0x0806</code> is an ARP datagram:</p>
+
+<pre><code>/* Ethernet protocol ID's */
+#define ETHERTYPE_PUP           0x0200          /* Xerox PUP */
+#define ETHERTYPE_SPRITE        0x0500          /* Sprite */
+#define ETHERTYPE_IP            0x0800          /* IP */
+#define ETHERTYPE_ARP           0x0806          /* Address resolution */
+#define ETHERTYPE_REVARP        0x8035          /* Reverse ARP */
+#define ETHERTYPE_AT            0x809B          /* AppleTalk protocol */
+#define ETHERTYPE_AARP          0x80F3          /* AppleTalk ARP */
+#define ETHERTYPE_VLAN          0x8100          /* IEEE 802.1Q VLAN tagging */
+#define ETHERTYPE_IPX           0x8137          /* IPX */
+#define ETHERTYPE_IPV6          0x86dd          /* IP protocol version 6 */
+#define ETHERTYPE_LOOPBACK      0x9000          /* used to test interfaces */
+</code></pre>
+
+<p>Let's stop here for now. We've figured out the basics of working with packet sockets. We've even created a raw packet socket and have started reading the packets arriving, and we've even decoded the ethernet headers so we can get an idea of what kinds of packets are arriving. You'll notice we didn't need to bind our sockets or anything like that. That's because binding a socket is only necessary when you are creating a connection-oriented socket, like a TCP socket, which requires two hosts connect to one another before exchanging messages. But that's a higher-level concept. Below that, at layer 2, all there are are packets arriving and being sent off, and they know nothing about the idea of a connection. It's all just data. In the next article, we'll build out our socket listener a bit more so that it only grabs the incoming ARP packets.</p>
+
+</body>
+</html>

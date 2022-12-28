@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="styles.css">
+<title>Part 1: Linux Network Namespaces</title>
+<meta name="description" content="Part 1 in a series on networking looks at how we can use linux network namespaces to create a virtual network for our simulations.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>Part 1: Understanding Linux Network Namespaces</h1>
+<p><font size="-1">Tues December 27, 2022.</font>
+<br><font size="-1"><a href="../articles.html">Back To Articles</a></font>
+<p>Before we can begin exploring networking concepts in detail, we first need a need a network at our disposal. Sure, we could do everything on paper and keep it all theoretical, but I always find you learn much deeper when you actually write some code and make things happen. Ideally, we've got a simple network that has enough complexity to see some interesting cases. Wiring up a physical network is not very practical. Thankfully, we can make use of linux network namespaces to virtualize an entire network setup on a single machine, so that's the way we're going to go.</p>
+<p>A network namespace allows us to create network devices which are only accessible within specific namespaces, making them distinct from other namespaces on the same system. By default, all network devices are created in the host namespace. I'll refer to this as the "default" or "host" namespace. If you run <span class="code">ip addr</span> then the devices you will see listed will be those devices in your host namespace. Let's take a look at the output of running that command in the host namespace.</p>
+
+<pre><code>$ ip addr
+
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+2: enp60s0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+    link/ether 8c:04:ba:a6:a2:20 brd ff:ff:ff:ff:ff:ff
+3: wlp61s0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 58:96:1d:ab:d0:60 brd ff:ff:ff:ff:ff:ff
+    inet 192.168.2.253/24 brd 192.168.2.255 scope global dynamic noprefixroute wlp61s0
+       valid_lft 258743sec preferred_lft 258743sec
+    inet6 fe80::bbbc:addd:95fc:66fd/64 scope link noprefixroute 
+       valid_lft forever preferred_lft forever
+</code></pre>
+
+<p>We can see I've got three devices in my host namespace.</p>
+<p>Now, let's go ahead and create a new network namespace named "net1" and peek inside it. To create the new namespace, we can run: <span class="code">sudo ip netns add net1</span>. We need root privileges to create new namespaces. Let's list our namespaces now:</p>
+
+<pre><code>$ ip netns
+
+net1
+</code></pre>
+
+<p>We can see our new namespace <code>net1</code> listed here now. Note, however, that the default namespace is not listed. We can run any old shell command we want inside our new namespace and the result will be identical to running it on our default namespace. The only difference is that the network devices will be segregated from one another. But everything else will be the same. The syntax for running a command inside a namespace is: <span class="code">sudo ip netns exec &ltnamespace&gt &ltcommand&gt</span>. Since we can run any command this way, we can create a new subshell and look around inside here (<span class="code">sudo ip netns exec net1 bash</span>). Try it out. You'll notice your filesystem is the same. Everything else is the same. But the network devices are not. They are unique to this namespace and cannot be seen outside it, and the devices in the host namespace cannot be seen from within here.</p>
+<p>Let's take a look at our <span class="code">ip addr</span> output now:</p>
+
+<pre><code>$ sudo ip netns exec net1 ip addr
+
+1: lo: <LOOPBACK> mtu 65536 qdisc noop state DOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+</code></pre>
+
+<p>By default, a new network namespace gets created with only a loopback device, and the device is down. But this is not the same loopback device as the loopback device in our host namespace. Let's convince ourselves this is true before we continue. We will open a few terminals to do this. In our first terminal, we will jump inside our network namespace, turn the loopback device up, and then bind to it on port 5000 using netcat:</p>
+
+<pre><code>term-1$ sudo ip netns exec net1 bash
+term-1# ip link set dev lo up
+term-1# nc -l 127.0.0.1 5000
+</code></pre>
+
+<p>We will just keep our server listening there. Now, in a second terminal we will start up a server on port 5000 on our loopback device on our host namespace:</p>
+
+<pre><code>term-2$ nc -l 127.0.0.1 5000
+</code></pre>
+
+<p>Finally, in a third terminal we will connect to localhost port 5000 and send some data. We will send the word "host" on the host namespace and then "net1" when we connect again inside the new network namespace. Let's run those two commands:</p>
+
+<pre><code>term-3$ nc 127.0.0.1 5000
+host
+^C
+term-3$ sudo ip netns exec net1 nc 127.0.0.1 5000
+net1
+^C
+</code></pre>
+
+<p>The <code>^C</code> instances are where we broke out of the connection with <code>CTRL+C</code>. But we can see we connect, send our data, then connect inside the namespace and send our data and finish. If we now look at the output of our two servers, we see that they are completely isolated from one another and that these two loopback devices are in fact distinct devices:</p>
+
+<pre><code>term-1# nc -l 127.0.0.1 5000
+net1
+</code></pre>
+<pre><code>term-2$ nc -l 127.0.0.1 5000
+host
+</code></pre>
+
+<p>Note that I'm using <code>$</code> to denote the shell prompt when running as an unprivileged user and <code>#</code> to denote it when running as root.</p>
+
+<p>Okay, now that we are convinced these namespaces really are isolated, we can begin setting up a virtual network so that we can start playing around with it.</p>
+
+<h2>Creating The Virtual Network</h2>
+</body>
+</html>

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="styles.css">
+<title>Building The Internet</title>
+<meta name="description" content="Let's look at ethernet cables as we dive into the physical media underlying the internet.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>Building The Internet</h1>
+<h2>Section 1: The Physical Layer</h2>
+<h3>Part 1: Ethernet Cables</h3>
+<p><font size="-1">Thursday December 29, 2022.</font>
+
+<p>We've been asked to build the internet. But we need to start somewhere. So, the first thing we will do is connect two computers together directly and have them transmit data between one another. It's a first step on our way to connecting millions of devices over vast geographical distances, but it's also no small feat.
+
+<p>We are going to connect our two computers using wires. In particular, an ethernet cable. There are all sorts of physical media we could use to send data between our machines. We could use radiowaves or all sorts of different types of cables with different properties and many other things. Unfortunately, we can't cover every physical medium because each one is very particular and warrents its own in-depth discussion. But I'd still like to ground our conversation in something concrete, so we will use an ethernet cable as an example of a physical medium. It also happens to be one of the most widely used media, so this discussion should have some relevance as well.
+
+<p>There is not just one type of ethernet cable. There are all sorts of different standards. To avoid getting too lost in the details, we are going to treat ethernet cables a little abstractly and just get at the heart of how they work. Really, their job is to send data from one end of the cable to the other end. The data should be able to flow in both directions, so that either side can send a message. And the data is encoded as different voltage levels running through the wire. Our wire will understand two different voltage levels, 5 volts and 0 volts. These two voltages allow us to encode binary data. We will say that a 5 volt signal is a one and a 0 volt signal is a zero. Thus, the data that can be sent through the wire is ones and zeroes and nothing else.
+
+<p>As we move on in the series, I'm going to be building virtual networks to illustrate the concepts we discuss. Thankfully, linux has a network device we can use to act as a virtual ethernet cable. But before we get there and bury everything in a black box, let's first code up a virtual ethernet cable ourselves. The point here is to create a piece of software which simulates an ethernet cable that meets the above criteria, so that we can get a deeper understanding of what's actually happening.
+
+<p>You can check out the code on github for our ethernet cable, it's quite simple. The repository is <a href="https://github.com/nicknadeau/building-the-internet">here</a>, and you can find the source code under <a href="https://github.com/nicknadeau/building-the-internet/tree/master/physical_layer/ethernet_cable">physical_layer/ethernet_cable</a>. It's a simple interface whose primary operations are setting a voltage level and reading a voltage level from one of the two wires in our cable. When creating the cable, you define the propagation rate, which is the number of nanoseconds it will take for any voltage applies to the "in" side of a wire to the "out" side of the wire. In other words, it's the amount of time it takes for the voltage to get from one side to the other side. The cable has two wires, and the "in" sides are where voltage is applied and the "out" sides are where voltage is read. Senders apply voltage to the in side and consumers read it from the out side. You can give any voltage you like.
+
+<p>The way this propagation works is we have a thread that sits in a loop and does the follow actions in that loop: First, it copies the voltage levels currently in both "in" sides of the two wires into temporary variables. Second, it sleeps for the amount of time defined by the propagation rate. Third, it wakes up and sets the voltage levels of the "out" sides of the two wires equal to whatever temporary values it had stored from the "in" sides before it went to sleep.
+
+<p>Let's draw up a simple timing diagram for our cable, since reading and writing to the cable is timing-sensitive, this should help us assure everything we do is safe.
+
+<p><img src="../img/ethernet_cable_timing_diagram.png" alt="Ethernet Cable Timing Diagram">
+
+<p>What this diagram shows is that there is a moment around when the thread is saving the "in" voltage levels to temporary variables, where those "in" values must be set and unmodified. Obviously, if that value is being changed when the thread is trying to save it, then it may pick up the new value or the old one, depending on how the timing works out. So the cable requires that the "in" voltages be written before that operation takes place in order for the cable to be used correctly.
+
+<p>The challenge we face is: how do we get our users to ensure they are using the cable properly? We want them to be able to set the "in" values prior to the save and to ensure they don't accidentally get there after the save already happens. We know the duration between wake-ups is <code>r</code>, which is the propagation rate in nanoseconds. If the user knows this, they can also ensure they only read or write once every <code>r</code> nanoseconds. The problem is, if their timing is especially bad, the time at which they attempt this operation may be right around the time the cable is performing its save operation, and so sometimes they may beat the cable and write before it saves and other times they may get there second and write after it saves, since thread scheduling is non-deterministic.
+
+<p>Ideally, the user does their read/write operation <code>r/2</code> nanoseconds after the cable does its save operation, since that's the furthest distance between the previous and next save points and is therefore the ideal place to ensure our timing lines up properly.
+
+<p>But actually, as long as they always read/write immediately after the save operation happens, then we will get the same guarantees. And conveniently, there's a nice point at which this becomes especially safe to do - when the thread begins its sleep. Since when the thread is sleeping, we know it is not setting or saving anything, and so the user is safe to read or write at that time. What we can do is send a signal at the time the thread goes to sleep to notify the user that it is now time to read or write.
+
+<p>Of course, this is not a problem a real ethernet cable has to worry about. Real cables are not managed by threads that move voltage from one side to the other. This is purely an artifact of our simulation, so I want to stress this is not faithful to reality for this one point. Nevertheless, we need to make sure our virtual cable is safe to use, and so sending out a read/write signal to the users on either end will do the trick for us.
+
+<p>This is what our new timing diagram looks like, then, with the read/write timing added in:
+
+<p><img src="../img/ethernet_cable_timing_diagram2.png" alt="Ethernet Cable Timing Diagram With Read/Write">
+
+<p>The user can safely read or write to and from the cable while the propagation thread is asleep. Once the thread wakes up, any reading and writing should be done with, and then the thread is free to set the "out" voltages and save the "in" voltages for the next time it awakens. This should give us a reliable usage pattern. And we can implement this fairly easily in C, by using a mutex and a condition to emit the signal.
+
+<p>If we ignore the signalling aspect of this, we've got a fairly nice model of a real ethernet cable. One computer will use wire #1 to send its data to the other computer, and so it will apply voltages to the "in" side of the wire and the other computer will read the voltage from that same wire's "out" side. The voltage will propagate across the wire after a non-instantaneous amount of time, like in real life. And the other computer will use wire #2 to transmit its data back, facilitating bi-directional communication between the two machines.
+
+</body>
+</html>
