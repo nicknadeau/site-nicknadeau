@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Building The Internet</title>
+<meta name="description" content="Let's look at how data encoding and decoding works.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>Building The Internet</h1>
+<h2>Mission I: Connecting Two Computers</h2>
+<h3>Encoding And Decoding</h3>
+
+<p>This topic sounds scarier than it is. It's actually quite simple, and incredibly powerful. By "encoding" all we mean is changing the way we represent some piece of information, so that it has a different representation. Specifically, the means by which we change the representation should be systematic - it should follow some clear and unambiguous rules.
+
+<p>We actually do this every day with all sorts of things. Let's take the number two as an example. I can represent it one way, by spelling it out as "two" using the three letters, 't', 'w' and 'o'. And I can represent it a second way, by using the symbol '2'. If I begin with the first representation, "two", I can encode it in its second representation, as "2".
+
+<p>That's a fairly trivial example. Another, more interesting one, is those make believe languages we all tried inventing as kids, so that we could write in a secret language only we (or a few friends) understood. Often, we would take the latin alphabet and re-map the letters to other letters in the same alphabet. We'd create a simple table. For example, we would say the letter 'a' in English corresponds to the letter 'x' in our made-up language, and we'd make this sort of mapping for every letter.
+
+<p>Then, we could take a word like "apple" and represent it in our new language as "xrrki". And voila. An unintelligible piece of gibberish. Well, that's encoding. That's all there is to it. Encode literally just means to re-represent. Decoding works in the opposite direction. You start with the result of the encoding, "xrrki" in this case, and you apply the rules in the reverse order, until you end up with the original message, "apple". In this simple example, we only have a single rule: "replace each character in the word with its corresponding character in the translation table".
+
+<p>Obviously an encoding cannot be random. It's got to be perfectly deterministic. If there's any bit of randomness in the encoding, then it's impossible to accurately decode it, since you would need to get particuarly lucky and randomly decode it correctly. But even if you did, how would you know you lucked out or not?
+
+<p>We call the set of rules used to encode data that has one representation into its encoded representation an <i>encoding scheme</i>.
+
+<p>So, let's circle back to what we said in the previous article. We had a seemingly contradictory statement: we wanted users to be able to send any kinds of symbols they wanted to one another, but we also said we had to limit them to using exactly two symbols in total. But actually, it's not contradictory at all with the concept of encoding. Our users can use all sorts of symbols, like all of the characters in the latin alphabet for instance, and they should be able to send those symbols to one another without issue. But, since the real underlying limitation of the system is that we can only use two unique symbols to represent our data, it just means we are going to have to build an encoding scheme which translates between latin characters and whatever other symbols they might be using to our two-symbol lexicon.
+
+<p>Since we really only have two symbols we have a binary representation. So, what's needed is an encoding scheme that translates the user's symbols to binary, so that we can transmit the binary across the two computers, and then on the other side the other computer can decode the binary to obtain the original symbols. This means both sides are going to have to agree ahead of time on the encoding scheme. Otherwise, if neither one knows how the other is encoding their data, then everything will be unintelligible gibberish coming through.
+
+<p>By the way, as long as your data has some kind of symbolic representation, whether it is numbers or letters or your own crazy half-baked hieroglyphs, that symbolic representation can be encoded as binary. Binary is the simplest lexicon that can be used to encode complex information. A lexicon which consists of one character can still encode all sorts of things, but because every symbol is identical, such a system can only encode single items in isolation. You cannot encode multiple words, or letters, for example, because there is no symbol that can be used to differentiate or distinguish elements. Binary only has two symbols, but that's all you need to create distinctions.
+
+<p>This is one of the primary reasons binary has survived so long as the means by which information is stored on computers. There are also many good physical reasons in the realm of electrical and computer engineering which have made binary the de facto representation, but its simplicity and ability to be able to encode any other symbolic representation have been equally strong motivations.
+
+<p>It's important we have a good grasp of binary, its relationship to decimal and hexadecimal, and an understanding of how to create a binary encoding scheme. For a lot of people, this is already second nature, so feel free to skip ahead. But for those who haven't been exposed to these concepts much, or would like a refresher, the next few pages are for you. Binary is the language of computers, and encoding between it and other things is at the heart of networking (really, the heart of most computing).
+
+<p><a href="../intro/table_of_contents.html">&lt&lt Table Of Contents</a> | <a href="mission_statement.html">&lt (Mission I) Previous</a> | Encoding And Decoding | <a href="binary_and_decimal.html">Next (Binary And Decimal) &gt</a>
+
+</body>
+</html>
+

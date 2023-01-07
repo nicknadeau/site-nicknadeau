@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Building The Internet</title>
+<meta name="description" content="Our first mission on the road to building the internet is connecting two computers.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>Building The Internet</h1>
+<h2>Mission I: Connecting Two Computers</h2>
+
+<p>Our eventual goal is to build the internet, which is to say, to inter-connect every computer in the world. That's a bit of a lofty goal. We'd be best to not aim for that right away, but to build up towards it incrementally, each day getting closer. That will allow us to master and prove out our concepts and what we've built earlier, on simpler examples, before we scale them up and add complexity.
+
+<p>In order to facilitate that incremental development, I've broken this project up into missions. Our first mission is simple: connect two computers together, so that they are able to exchange data with one another.
+
+<p>We'll consider this mission satisfied once we've gotten to a place where we can send data from one computer and have it appear on another, and vice versa. Perhaps there will be errors from time to time. Perhaps sometimes the data will be lost and never arrive. We don't care, not at this stage, as long as we can at least manage to send one single piece of data from the one computer to the other, even if we can only do it once... that's a great starting point.
+
+<p>But first - what exactly do we mean by the word <i>data</i>? Well, we really just mean a piece of information, which is to say, a symbol. Anything can be a symbol really. The Hindu-Arabic number system consists of ten symbols: 0, 1, 2, 3, 4, 5, 6, 7, 8, and 9. Each of these symbols has its own meaning. The symbols can be combined together in certain ways to produce new meanings. Our alphabet consists of symbols. We can even think of more complex objects as symbols. All we want to be able to do is allow one computer to send a sequence of one or more symbols to another computer.
+
+<p>You might be wondering, what do these symbols mean? To be frank - we don't care. Our job is to allow the symbols to be passed between the computers. Whatever the users of those computers are using those symbols to signify is up to them. We want for them to be able to communicate anything they like. All we do is transport the symbols from one place to the next.
+
+<p>Alright, so our job is to allow computers to transmit symbols to one another. Fine. But <i>what</i> symbols exactly? After all, we just mentioned that anything at all can be a symbol, and we've got to settle on something, so what symbols are we going to allow them to send?
+
+<p>You might not like the answer. Once again, we're going to be a bit aloof. We don't care what symbols they want to exchange with one another. We want them to be able to send any symbol they like. Ah, but yes, at the end of the day, there must be some sort of restriction or limitation in place. After all, the tree on my front lawn could be a symbol, and surely we don't expect to allow these two computers to send that symbol between them ... whatever that means.
+
+<p>That's true. We do have a practical restriction on the kinds of symbols that can be sent: there must be exactly two unique symbols in their "lexicon", which they are allowed to send to one another. Hold up - we just finished saying we wanted the users to be able to send any kind of symbol they liked, with great flexibility, and now we've limited them to using two specific symbols? What gives? And where did this magic number two come from anyway?
+
+<p>Well, to answer this, we're going to have to touch on the topic of encoding. And we rightfully should, since everything we're doing depends upon this fundamental idea.
+
+<p><a href="../intro/table_of_contents.html">&lt (Table Of Contents) Previous</a> | Mission I | <a href="encoding_and_decoding.html">Next (Encoding And Decoding) &gt</a>
+
+</body>
+</html>
+

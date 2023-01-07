@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Building The Internet</title>
+<meta name="description" content="Let's look at the relationship between binary and decimal representation systems.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>Building The Internet</h1>
+<h2>Mission I: Connecting Two Computers</h2>
+<h3>Binary And Decimal</h3>
+
+<p>People often get a bit nervous about this topic, especially about binary. It feels like some weird foreign way of doing things (math, right?) that only people smarter than me understand. Actually, like most things, it only feels foreign and intimidating from a distance. Up close, it's much easier than it seems.
+
+<p>When we think of binary we are tempted to think of math, because we often think of it in relation to decimal, and the decimal system is what we use to represent numbers. But actually, binary has nothing to do with math in the strict sense (as we touched on in the previous article). It can be used to represent numbers, sure. But it doesn't have to. It can represent anything.
+
+<p>The same is true of decimal. It can be used to represent numbers, but it also doesn't have to.
+
+<p>There's nothing special about decimal as opposed to binary. At its core, information is represented by symbols. There is some finite number of distinct symbols we can use to represent that information (finite because we are human, and we can't describe infinite symbol tables). The number of symbols is often called the "base" of the representation. Binary has 2 symbols, so it is "base 2". Decimal has 10 symbols, so it is "base 10". The English alphabet has 26 symbols, so it is "base 26". The symbols can be anything at all. All that matters is the number of them.
+
+<p>So, while we use the symbols 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 to represent numbers we didn't have to. We could have used a, b, c, d, e, f, g, h, i, j instead. Or some other random symbols we created. The majority difficulty with this topic is overcoming its mystique - this feeling that the decimal system is something unique and entrenched and untouchable, and that binary is some other equally opaque and impenetrable system. They're not. All that they refer to is the number of symbols those representations use.
+
+<p>Yes, we often use decimal for math, but we don't have to. There's no inherent benefit to base 10 over any other base. Sure, it's more compact than binary, which makes it easier to parse as a human, but base 9 and base 11 are compact too. It's really just the way it is because that was what we inherited, not because mathematics only works in the decimal system. Not a chance. In fact, any two bases are perfectly equivalent to one another in terms of what they are able to express. That's essentially one of the corrolaries of the Fundamental Theorem of Arithmetic. And to go beyond math for a moment, all that means is any two sets of symbols with differing numbers of symbols are equivalent to one another in terms of what they can express - as long as there are at least two symbols in the set.
+
+<p>It turns out that the rules of the dcimal number system don't actually mention decimal at all. That is, they aren't dependent on the number of symbols you're using. That will be important in a bit, when we transition over to the binary system. But for now, let's refresh ourselves on how counting in decimal works, when thinking of it from this rules-based perspective.
+
+<p>We begin with 0. The next number is 1, then 2, and so on until we hit 9. Each time, we just increment our symbol by one. But what happens after 9? Well, we use a technique I like to call roll-and-increment. We roll the symbol we're dealing with back over to 0, so that 9 becomes 0 now. And then, we increment the symbol to its left by one. You might be thinking - 9 has no symbol to its left, it's just one symbol. Actually, we can prepend 9 with as many zeroes as we want and we still just have the number 9. For instance, 09, 009, and 0000009 are all just 9.
+
+<p>With that said, when we see a number like '9' we have to remember it's just a shorthand way of representing 9 with infinitely many implicit zeroes in front of it. So, in our roll-and-increment strategy, the symbol to the left of 9 is 0, and if we increment 0 we get 1. Thus, after rolling 9 back over to 0 and incrementing 0 to 1, we get '10' as the next number after '9' (or '09').
+
+<p>You can think of each of the symbols like they're written out on a circular combination lock. After we go around from 0 to 9, we end up coming full-circle again back to 0 to repeat the process.
+
+<p>With a number like 99, we just have to apply the roll-and-increment rule twice, because after we apply it to the 9 on the right side, it causes the 9 on the left side to be incremented, which triggers another roll-and-increment. Thus, '99' (or '099') brings us to '100' as our next number.
+
+<p>Alright, we're ready to work with a binary number system now. Keep in mind - binary and decimal refer to the number of symbols, which can be used to represent anything, not just mathematics. We are talking about the binary <i>number system</i> now, and so we are using binary to represent numbers, just like we used decimal to represent numbers. It's important to be precise about this, and not get confused and associate these representations with mathematics only.
+
+<p>Let's do some basic counting in binary to get the hang of it. As we saw above with decimal, the rules don't mention the number of symbols we have, and so they apply perfectly to binary as well (or any other base for that matter).
+
+<p>In binary we begin with 0 just like decimal. The next number is 1, just like decimal. Except now, we've already hit our maximum binary symbol with '1'. So we're in the same boat we were in with decimal when we hit '9', its maximum symbol. We just apply the roll-and-increment rule now. So our '1' gets rolled back over to zero, and we increment the implicit zero to its left, so that it becomes one. And thus we go from '1' (or '01') to '10'. Next, we have 11, and then again we have to apply our roll-and-increment rule. Except this time, we've got 2 maximum symbols in a row, just like when we have '99' in decimal.
+
+<p>So, applying our roll-and-increment rule twice to the number '11' (or '011') gets us '100'. After that, we have 101, and then 110 (another roll-and-increment). And we can just keep going like that forever. The number of roll-and-increments we have to do is much more frequent in binary because we have a lot less symbols. But once we get the hang of it, counting in binary is as easy as decimal. I'd encourage you to count a few more numbers out on your own to get some practice.
+
+<p>Still don't believe me the two are equivalent? Does this all seem too easy? Are you feeling lied to your whole life, duped into thinking there was something special about the decimal number system? Well you were. Let's look at a simple example of performing addition in decimal and binary before we conclude, just to convince you. You can explore other operations on your own.
+
+<p>Let's say we want to add 14 and 29. The algorithm we are taught as kids goes as follows.
+
+<p><img src="../../img/decimal_addition.png" alt="Addition In Decimal">
+
+<p>First, we add the two symbols that are in the right-most place together. In this case, that's '4' and '9', which our counting rules above showed gives us 13. Since 13 is two symbols wide and not one, we have to apply a special rule. We can write the right-most symbol in this summation into our final result, beneath the right column. So, the '3' goes into the final result. But the left symbol, the '1', is carried over on top of the symbols to the left of whatever ones we just added together. That leaves us with 3 symbols in the next column, the '1' and '2' from '14' and '29', as well as the '1' we just carried over.
+
+<p>But now we just repeat our previous steps. We add those symbols up and 1 + 2 + 1 gives us 4. This time our summation is a single symbol and not two, and so the rule is straight-forward in this case - we can write it directly in the result, in the same position as the column we just added up. Thus, our result now becomes '43'. We can keep going, because there are infinitely many implicit zeroes to our left, but we see that every time we add 0 and 0 we get 0, and so we just end up carrying those infinite implicit zeroes down into our final result, and there's no need to write all those out of course. So we are done. The answer is 43.
+
+<p>Let's do the same with binary now. We will add 11 and 01 together, using the same algorithm.
+
+<p><img src="../../img/binary_addition.png" alt="Addition In Binary">
+
+<p>We begin the same way, by adding the right-most column up, and so we add 1 and 1. If you recall our counting exercise, the next number after 1 is 10. So, we have a two-symbol summation. We have to apply the two-symbol rule. We can write the right symbol, '0', in our final result, but the left symbol, '1', gets carried over to the next column. Next, we add that column up, and so we have to add 1 + 0 + 1, which is just 1 + 1 again, giving us 10 again. The same rule applies, we write the '0' down in our final result and carry the '1' over. This time, our implicit leading zeroes are used and are helpful.
+
+<p>Finally, we have to add up this third column, which is the two implicit zeroes and our '1' carry-over value, so 0 + 0 + 1, which is just 1. Now that we have a single symbol summation we are done. We can write it in the final result and we end up with '100' as our answer.
+
+<p>Notice that we used the exact same rules for addition as was used in the decimal system, because the rules don't even mention the number of symbols at all. If you're still a bit rusty with binary, you can verify this result by just starting at 0 and incrementing each number until you see what '01' and '11' and '100' are in decimal. Then you can verify that 11 + 01 is in fact 100.
+
+<p>That's all there is to it. It turns out, binary is not so intimidating after all.
+
+<p><a href="../intro/table_of_contents.html">&lt&lt Table Of Contents</a> | <a href="encoding_and_decoding.html">&lt (Encoding And Decoding) Previous</a> | Binary And Decimal | <a href="hexadecimal.html">Next (Hexadecimal) &gt</a>
+
+</body>
+</html>
+
